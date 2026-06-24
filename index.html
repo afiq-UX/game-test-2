@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rumah Off — Tutup Lampu Sebelum Keluar</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, -apple-system, sans-serif; color: #fff; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; top: 12px; left: 12px;
+        padding: 10px 14px; background: rgba(0,0,0,0.55);
+        border-radius: 8px; font-size: 14px; line-height: 1.5;
+        pointer-events: none; backdrop-filter: blur(4px);
+      }
+      #hud .big { font-size: 22px; font-weight: 600; }
+      #hud .dim { opacity: 0.65; font-size: 12px; }
+      #prompt {
+        position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+        padding: 10px 18px; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 8px; font-size: 16px; display: none;
+      }
+      #prompt kbd {
+        background: #fff; color: #000; padding: 2px 7px; border-radius: 4px;
+        font-family: ui-monospace, monospace; font-size: 13px; margin-right: 6px;
+      }
+      #compass {
+        position: fixed; top: 12px; right: 12px;
+        padding: 8px 12px; background: rgba(0,0,0,0.55);
+        border-radius: 8px; font-size: 13px; pointer-events: none;
+      }
+      #win {
+        position: fixed; inset: 0; display: none;
+        flex-direction: column; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.85); text-align: center; gap: 16px;
+      }
+      #win h1 { font-size: 42px; margin: 0; }
+      #win p { font-size: 18px; margin: 0; opacity: 0.85; }
+      #win button {
+        font-size: 16px; padding: 10px 24px; cursor: pointer;
+        background: #f4c39b; color: #2a1810; border: 0; border-radius: 6px;
+        font-weight: 600;
+      }
+      #win button:hover { background: #ffd6b0; }
+
+      /* ---------- Mobile touch controls (hidden until a touch is detected) ---------- */
+      #touch { display: none; }
+      body.touch #touch { display: block; }
+      /* On touch devices, drop the keyboard hint line */
+      body.touch #hud .dim { display: none; }
+
+      #joy {
+        position: fixed; left: 22px; bottom: 26px;
+        width: 130px; height: 130px; border-radius: 50%;
+        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+        touch-action: none; -webkit-user-select: none; user-select: none;
+      }
+      #joyNub {
+        position: absolute; left: 50%; top: 50%; width: 56px; height: 56px;
+        margin: -28px 0 0 -28px; border-radius: 50%;
+        background: rgba(255,255,255,0.32); border: 1px solid rgba(255,255,255,0.45);
+        transition: background 0.1s;
+      }
+      #interact {
+        position: fixed; right: 26px; bottom: 40px;
+        width: 92px; height: 92px; border-radius: 50%;
+        background: rgba(244,195,155,0.22); border: 2px solid rgba(244,195,155,0.7);
+        color: #ffe2c4; font-size: 30px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        touch-action: none; -webkit-user-select: none; user-select: none;
+        opacity: 0.4; pointer-events: none; transition: opacity 0.12s, background 0.12s;
+      }
+      #interact.live { opacity: 1; pointer-events: auto; }
+      #interact.live:active { background: rgba(244,195,155,0.5); }
+
+      @media (max-width: 560px) {
+        #hud { font-size: 12px; padding: 8px 11px; }
+        #hud .big { font-size: 18px; }
+        #compass { font-size: 11px; padding: 6px 9px; }
+        #win h1 { font-size: 32px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <div class="big">Tutup <span id="count">0</span>/<span id="total">0</span></div>
+      <div>⏱ <span id="timer">0:00</span></div>
+      <div class="dim">WASD · drag to look · scroll to zoom · E to switch off</div>
+    </div>
+    <div id="compass">📍 <span id="room">—</span></div>
+    <div id="prompt"><kbd>E</kbd><span id="promptText"></span></div>
+    <div id="win">
+      <h1>🌙 Selamat tinggal!</h1>
+      <p>Semua tertutup dalam <span id="winTime">0:00</span></p>
+      <button id="restart">Main lagi</button>
+    </div>
+    <div id="touch">
+      <div id="joy"><div id="joyNub"></div></div>
+      <div id="interact">E</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
