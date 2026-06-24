@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { registerGeometry, solidMesh } from '../systems/GeometrySystem.js';
 import { getMaterial } from '../systems/MaterialSystem.js';
+import { getModel } from '../systems/ModelLoader.js';
 
 // Fridge (Peti Sejuk)
 registerGeometry('fridge', (mats) => {
+  const model = getModel('fridge', mats, new THREE.Vector3(-0.4, 2.0, 0.4));
+  if (model) return model;
+
   const body = solidMesh(new THREE.BoxGeometry(1.0, 2.1, 0.75), getMaterial(mats.body ?? 'offWhite'));
   body.position.y = 1.05;
   const seam = solidMesh(new THREE.BoxGeometry(1.02, 0.02, 0.76), getMaterial(mats.seam ?? 'lightGray'));
@@ -20,6 +24,9 @@ registerGeometry('fridge', (mats) => {
 
 // Microwave
 registerGeometry('microwave', (mats) => {
+  const model = getModel('microwave', mats, new THREE.Vector3(0.25, -0.08, 0.21));
+  if (model) return model;
+
   const body = solidMesh(new THREE.BoxGeometry(0.6, 0.35, 0.4), getMaterial(mats.body ?? 'darkGray'));
   const door = solidMesh(new THREE.BoxGeometry(0.4, 0.28, 0.02), getMaterial(mats.door ?? 'tintedGlass'));
   door.position.set(-0.05, 0, 0.21);
@@ -31,6 +38,9 @@ registerGeometry('microwave', (mats) => {
 
 // Rice Cooker (Periuk Nasi)
 registerGeometry('riceCooker', (mats) => {
+  const model = getModel('riceCooker', mats, new THREE.Vector3(0.15, -0.1, 0.15));
+  if (model) return model;
+
   const body = solidMesh(new THREE.CylinderGeometry(0.18, 0.18, 0.28, 16), getMaterial(mats.body ?? 'whitePlastic'));
   const lid = solidMesh(new THREE.CylinderGeometry(0.18, 0.18, 0.05, 16), getMaterial(mats.lid ?? 'aluminum'));
   lid.position.y = 0.16;
@@ -42,8 +52,11 @@ registerGeometry('riceCooker', (mats) => {
 
 // Kettle (Cerek)
 registerGeometry('kettle', (mats) => {
+  const model = getModel('kettle', mats, new THREE.Vector3(0.0, -0.1, 0.15));
+  if (model) return model;
+
   const body = solidMesh(new THREE.CylinderGeometry(0.13, 0.16, 0.25, 16), getMaterial(mats.body ?? 'stainless'));
-  const spout = solidMesh(new THREE.ConeGeometry(0.04, 0.12, 8), getMaterial(mats.body ?? 'stainless'));
+  const spout = solidMesh(new THREE.ConeGeometry(0.04, 0.12, 8), getMaterial(mats.spout ?? 'darkGray'));
   spout.position.set(0.15, 0.05, 0);
   spout.rotation.z = -Math.PI / 3;
   const handle = solidMesh(new THREE.TorusGeometry(0.09, 0.012, 6, 12, Math.PI), getMaterial(mats.handle ?? 'darkGray'));
@@ -57,6 +70,9 @@ registerGeometry('kettle', (mats) => {
 
 // Toaster
 registerGeometry('toaster', (mats) => {
+  const model = getModel('toaster', mats, new THREE.Vector3(0.15, -0.08, 0.12));
+  if (model) return model;
+
   const body = solidMesh(new THREE.BoxGeometry(0.35, 0.22, 0.22), getMaterial(mats.body ?? 'brushedSteel'));
   const slot = solidMesh(new THREE.BoxGeometry(0.25, 0.02, 0.08), getMaterial(mats.slot ?? 'blackPlastic'));
   slot.position.y = 0.12;

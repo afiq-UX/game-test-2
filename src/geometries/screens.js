@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { registerGeometry, solidMesh } from '../systems/GeometrySystem.js';
 import { getMaterial, createToggleMaterial } from '../systems/MaterialSystem.js';
+import { getModel } from '../systems/ModelLoader.js';
 
 // TV
 registerGeometry('tv', (mats) => {
+  const model = getModel('tv', mats, new THREE.Vector3(1.15, -0.65, 0.08));
+  if (model) return model;
+
   const frame = solidMesh(new THREE.BoxGeometry(2.6, 1.5, 0.1), getMaterial(mats.frame ?? 'blackPlastic'));
   const screenMat = createToggleMaterial(mats.screen ?? 'screenOn');
   const screen = solidMesh(new THREE.BoxGeometry(2.4, 1.3, 0.04), screenMat);
@@ -19,6 +23,9 @@ registerGeometry('tv', (mats) => {
 
 // Computer Monitor
 registerGeometry('computerMonitor', (mats) => {
+  const model = getModel('computerMonitor', mats, new THREE.Vector3(0.36, 0.18, 0.03));
+  if (model) return model;
+
   const stand = solidMesh(new THREE.CylinderGeometry(0.04, 0.08, 0.25, 12), getMaterial(mats.stand ?? 'darkGray'));
   const arm = solidMesh(new THREE.BoxGeometry(0.12, 0.02, 0.08), getMaterial(mats.stand ?? 'darkGray'));
   arm.position.y = 0.13;

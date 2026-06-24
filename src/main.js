@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import { buildHouse, ROOMS } from './house.js';
-import { createAppliances } from './appliances.js';
 import { createMinimap } from './minimap.js';
+import './geometries/index.js';
+import { ApplianceConfigs } from './configs/appliances.js';
+import { createAllAppliances, tickAppliances, turnOffAppliance } from './factory/ApplianceFactory.js';
+import { detectQuality, enforceLightBudget } from './systems/QualitySystem.js';
+import { preloadModels } from './systems/ModelLoader.js';
+
+detectQuality();
 
 // ---------- Scene ----------
 const scene = new THREE.Scene();
@@ -52,8 +58,17 @@ roof.traverse((o) => { if (o.isMesh) occluders.push(o); });
 occluders.push(ceiling);
 for (const d of doors) occluders.push(d.leaf); // closed door blocks the view; open leaf swings aside
 
+// ---------- Model preload ----------
+const loaderEl = document.getElementById('loader');
+const loaderBar = document.getElementById('loader-bar');
+const modelNames = [...new Set(ApplianceConfigs.map(c => c.geometry))];
+loaderBar.style.width = '30%';
+await preloadModels(modelNames);
+loaderBar.style.width = '100%';
+loaderEl.classList.add('hidden');
+
 // ---------- Appliances ----------
-const appliances = createAppliances(scene);
+const appliances = createAllAppliances(scene, ApplianceConfigs);
 document.getElementById('total').textContent = appliances.length;
 
 // ---------- Minimap (always-on, top-right) ----------
@@ -307,14 +322,7 @@ function clickSound() {
 }
 
 function toggleOff(a) {
-  a.on = false;
-  a.indicator.visible = false;
-  if (a.light) a.light.visible = false;
-  if (a.screen) {
-    a.screen.emissiveIntensity = 0;
-    a.screen.color.setHex(0x0a0a0a);
-    a.screen.needsUpdate = true;
-  }
+  turnOffAppliance(a);
   clickSound();
 }
 
@@ -461,12 +469,9 @@ function step() {
       playerBody.position.y += (0.5 - playerBody.position.y) * Math.min(1, dt * 10);
     }
 
-    // Spin fans
-    for (const a of appliances) {
-      if (a.on && a.spinTarget) {
-        a.spinTarget.rotation.y += dt * a.spinSpeed;
-      }
-    }
+    // Tick appliance behaviors (spin, emissive, etc.)
+    tickAppliances(appliances, dt);
+    enforceLightBudget(appliances, player.position);
 
     // Animate doors toward their open/closed angle
     for (const dr of doors) {

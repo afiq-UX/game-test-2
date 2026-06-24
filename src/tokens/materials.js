@@ -31,7 +31,7 @@ export const MaterialTokens = {
   hair:           { color: 0x1a1a1a, roughness: 0.9, metalness: 0 },
 
   // --- Glass / Transparent ---
-  tintedGlass:    { color: 0x223344, roughness: 0.1, metalness: 0.2 },
+  tintedGlass:    { color: 0x223344, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.7 },
   clearBlue:      { color: 0xa3d8ff, roughness: 0.1, metalness: 0, transparent: true, opacity: 0.5 },
   darkInset:      { color: 0x263238, roughness: 0.5, metalness: 0 },
 
@@ -45,7 +45,7 @@ export const MaterialTokens = {
   warmGlowCone:   { color: 0xfff4d6, emissive: 0xffd97a, emissiveIntensity: 1.3, roughness: 0.4, side: 'DoubleSide' },
 
   // --- Emissives (ceiling lights) ---
-  ceilingWarm:    { color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 1.3, roughness: 0.4 },
-  ceilingCool:    { color: 0xffffff, emissive: 0xe6f0ff, emissiveIntensity: 1.3, roughness: 0.3 },
-  ceilingNeutral: { color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 1.1, roughness: 0.4 },
+  ceilingWarm:    { color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 1.3, roughness: 0.4, side: 'DoubleSide' },
+  ceilingCool:    { color: 0xffffff, emissive: 0xe6f0ff, emissiveIntensity: 1.3, roughness: 0.3, side: 'DoubleSide' },
+  ceilingNeutral: { color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 1.1, roughness: 0.4, side: 'DoubleSide' },
 };

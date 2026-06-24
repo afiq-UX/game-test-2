@@ -104,6 +104,17 @@
         #compass { font-size: 11px; padding: 6px 9px; }
         #win h1 { font-size: 32px; }
       }
+      #loader {
+        position: fixed; inset: 0; background: #070912;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 16px; z-index: 999;
+      }
+      #loader p { font-size: 15px; opacity: 0.6; margin: 0; }
+      #loader-bar-wrap {
+        width: 180px; height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden;
+      }
+      #loader-bar { height: 100%; width: 0%; background: #f4c39b; border-radius: 2px; transition: width 0.2s; }
+      #loader.hidden { display: none; }
     </style>
   </head>
   <body>
@@ -122,6 +133,10 @@
       <h1>🌙 Selamat tinggal!</h1>
       <p>Semua tertutup dalam <span id="winTime">0:00</span></p>
       <button id="restart">Main lagi</button>
+    </div>
+    <div id="loader">
+      <p>Memuatkan rumah…</p>
+      <div id="loader-bar-wrap"><div id="loader-bar"></div></div>
     </div>
     <div id="touch">
       <div id="joy"><div id="joyNub"></div></div>
