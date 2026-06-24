@@ -21,8 +21,9 @@ export const ROOMS = {
 };
 
 export function buildHouse(scene) {
-  const walls = [];      // collision AABBs
+  const walls = [];      // structural wall collision AABBs (also drawn on the minimap)
   const wallMeshes = []; // meshes for camera occlusion raycast
+  const furniture = [];  // furniture collision AABBs (collision only, not on the minimap)
 
   const matOuter = new THREE.MeshStandardMaterial({ color: 0xe8d5b7, roughness: 0.92 });
   const matInner = new THREE.MeshStandardMaterial({ color: 0xc4ad8b, roughness: 0.92 });
@@ -33,8 +34,9 @@ export function buildHouse(scene) {
   buildWallAlongZ(scene, walls, wallMeshes, matOuter, -15, -12, 12, []);                    // west
   buildWallAlongZ(scene, walls, wallMeshes, matOuter,  15, -12, 12, []);                    // east
 
-  // Interior horizontal divider (z = -2). Doorways one per north room.
-  buildWallAlongX(scene, walls, wallMeshes, matInner, -2, -15, 15, [[-12, -10], [-1, 1], [10, 12]]);
+  // Interior horizontal divider (z = -2). Doorways to the two bedrooms only;
+  // the centre is solid so the TV (at x=0) has a wall behind it.
+  buildWallAlongX(scene, walls, wallMeshes, matInner, -2, -15, 15, [[-12, -10], [10, 12]]);
 
   // Interior verticals.
   // BR1|BATH and KIT|LIV share x=-5. Doors: BR1->BATH at z ∈ [-9,-7]; KIT->LIV at z ∈ [3,5].
@@ -82,10 +84,33 @@ export function buildHouse(scene) {
   mat.position.set(0, 0.02, 13);
   scene.add(mat);
 
+  // Collect furniture footprints as collision AABBs (separate from walls so the
+  // minimap stays clean and camera occlusion is unchanged).
+  furnitureColliders = furniture;
   buildFurniture(scene);
+  furnitureColliders = null;
 
-  return { walls, wallMeshes };
+  // Interior ceiling just under wall height: seals the top of every room so you
+  // can't see over the walls into adjacent rooms — only through doorways. Casts
+  // no shadow, so moonlight still reaches the interior.
+  const ceiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(30, 24),
+    new THREE.MeshStandardMaterial({ color: 0xcfc7b6, roughness: 0.95, side: THREE.DoubleSide })
+  );
+  ceiling.rotation.x = Math.PI / 2; // face downward into the rooms
+  ceiling.position.set(0, WALL_H - 0.03, 0);
+  ceiling.castShadow = false;
+  ceiling.receiveShadow = false;
+  scene.add(ceiling);
+
+  const doors = buildBedroomDoors(scene);
+  const roof = buildRoof(scene);
+
+  return { walls, wallMeshes, furniture, roof, doors, ceiling };
 }
+
+// While set (during buildFurniture), every box() registers a collision AABB here.
+let furnitureColliders = null;
 
 function buildWallAlongX(scene, walls, wallMeshes, mat, z, xStart, xEnd, gaps) {
   for (const [s, e] of subtractGaps(xStart, xEnd, gaps)) {
@@ -140,6 +165,12 @@ function box(scene, x, y, z, w, h, d, color, roughness = 0.85) {
   m.castShadow = true;
   m.receiveShadow = true;
   scene.add(m);
+  if (furnitureColliders) {
+    furnitureColliders.push({
+      minX: x - w / 2, maxX: x + w / 2,
+      minZ: z - d / 2, maxZ: z + d / 2,
+    });
+  }
   return m;
 }
 
@@ -228,4 +259,120 @@ function buildFurniture(scene) {
   bathmat.rotation.x = -Math.PI / 2;
   bathmat.position.set(0, 0.02, -7);
   scene.add(bathmat);
+}
+
+// ---------- Roof (gabled, ridge along X at z=0) ----------
+// DoubleSide so it reads solid from any outside angle; main.js hides it when the
+// camera climbs above the walls to look down into the house. No shadow casting,
+// so when it's visible it never darkens the interior.
+function roofQuad(a, b, c, d, mat) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(
+    [...a, ...b, ...c, ...a, ...c, ...d], 3));
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, mat);
+}
+function roofTri(a, b, c, mat) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([...a, ...b, ...c], 3));
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, mat);
+}
+function buildRoof(scene) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a4b38, roughness: 0.88, side: THREE.DoubleSide });
+  const OX = 15.8, OZ = 12.8, base = 3.0, peak = 5.0; // 0.8 overhang past the walls
+  const NW = [-OX, base, -OZ], NE = [OX, base, -OZ];
+  const SW = [-OX, base,  OZ], SE = [OX, base,  OZ];
+  const RW = [-OX, peak, 0],   RE = [OX, peak, 0];
+  const g = new THREE.Group();
+  g.add(roofQuad(NW, NE, RE, RW, mat)); // north slope
+  g.add(roofQuad(SE, SW, RW, RE, mat)); // south slope
+  g.add(roofTri(NW, SW, RW, mat));      // west gable
+  g.add(roofTri(NE, SE, RE, mat));      // east gable
+  g.traverse((o) => { o.castShadow = false; o.receiveShadow = false; });
+  // Always visible & solid; the camera is kept below it via occlusion (main.js).
+  scene.add(g);
+  return g;
+}
+
+// ---------- Bedroom doors ----------
+// Hinged leaves at the bedroom doorways. They start CLOSED with a collider
+// blocking the opening; the player opens/closes them with E (handled in
+// main.js), which animates the leaf and swaps the collider between the doorway
+// (closed) and the swung-open leaf footprint (open). Returns door objects.
+//   axis 'z' -> wall runs along Z at x=fixed, gap along Z from gapStart..+2
+//   axis 'x' -> wall runs along X at z=fixed, gap along X from gapStart..+2
+function buildBedroomDoors(scene) {
+  return [
+    makeDoor(scene, 'z', -5, -9, -Math.PI / 2, 'Pintu Bilik 1 (Bilik Air)'), // BR1 <-> bath
+    makeDoor(scene, 'z',  5, -9,  Math.PI / 2, 'Pintu Bilik 2 (Bilik Air)'), // BR2 <-> bath
+    makeDoor(scene, 'x', -2, -12, Math.PI / 2, 'Pintu Bilik 1 (Dapur)'),     // BR1 <-> kitchen
+    makeDoor(scene, 'x', -2,  10, Math.PI / 2, 'Pintu Bilik 2 (Makan)'),     // BR2 <-> dining
+  ];
+}
+function makeDoor(scene, axis, fixed, gapStart, openAngle, name) {
+  const DOOR_H = 2.3, LEAF = 1.86, halfT = 0.12;
+  const g0 = gapStart, g1 = gapStart + 2, gc = gapStart + 1;
+  const along = axis === 'z'; // leaf/gap run along Z (else along X)
+  const headerMat = new THREE.MeshStandardMaterial({ color: 0xc4ad8b, roughness: 0.92 });
+  const frameMat  = new THREE.MeshStandardMaterial({ color: 0x5a4636, roughness: 0.8 });
+  const woodMat   = new THREE.MeshStandardMaterial({ color: 0x6b4a32, roughness: 0.7 });
+
+  // Lintel above the opening (drops the doorway from the 3.0 wall to DOOR_H)
+  const header = new THREE.Mesh(
+    along ? new THREE.BoxGeometry(0.2, 3.0 - DOOR_H, 2.0)
+          : new THREE.BoxGeometry(2.0, 3.0 - DOOR_H, 0.2), headerMat);
+  header.position.set(along ? fixed : gc, (DOOR_H + 3.0) / 2, along ? gc : fixed);
+  header.castShadow = true; header.receiveShadow = true;
+  scene.add(header);
+
+  // Jambs framing the opening
+  for (const s of [g0, g1]) {
+    const jamb = new THREE.Mesh(
+      along ? new THREE.BoxGeometry(0.24, DOOR_H, 0.12)
+            : new THREE.BoxGeometry(0.12, DOOR_H, 0.24), frameMat);
+    jamb.position.set(along ? fixed : s, DOOR_H / 2, along ? s : fixed);
+    jamb.castShadow = true; jamb.receiveShadow = true;
+    scene.add(jamb);
+  }
+
+  // Hinged leaf (pivot at the gapStart jamb). rotation.y=0 -> closed.
+  const group = new THREE.Group();
+  group.position.set(along ? fixed : gapStart, 0, along ? gapStart : fixed);
+  group.rotation.y = 0;
+  const leaf = new THREE.Mesh(
+    along ? new THREE.BoxGeometry(0.05, DOOR_H - 0.05, LEAF)
+          : new THREE.BoxGeometry(LEAF, DOOR_H - 0.05, 0.05), woodMat);
+  leaf.position.set(along ? 0 : LEAF / 2, DOOR_H / 2, along ? LEAF / 2 : 0);
+  leaf.castShadow = true; leaf.receiveShadow = true;
+  group.add(leaf);
+  const handle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.025, 0.025, 0.14, 8),
+    new THREE.MeshStandardMaterial({ color: 0xc9b037, metalness: 0.6, roughness: 0.4 }));
+  if (along) { handle.rotation.x = Math.PI / 2; handle.position.set(0.07, DOOR_H / 2 - 0.1, LEAF - 0.2); }
+  else       { handle.rotation.z = Math.PI / 2; handle.position.set(LEAF - 0.2, DOOR_H / 2 - 0.1, 0.07); }
+  group.add(handle);
+  scene.add(group);
+
+  // Collision: closed = doorway AABB; open = swung-leaf footprint AABB.
+  const hx = along ? fixed : gapStart, hz = along ? gapStart : fixed;
+  const dir = along
+    ? { x: Math.sin(openAngle), z: Math.cos(openAngle) }  // local +Z rotated by openAngle
+    : { x: Math.cos(openAngle), z: -Math.sin(openAngle) }; // local +X rotated by openAngle
+  const fx = hx + dir.x * LEAF, fz = hz + dir.z * LEAF;
+  const closedBounds = along
+    ? { minX: fixed - halfT, maxX: fixed + halfT, minZ: g0, maxZ: g1 }
+    : { minX: g0, maxX: g1, minZ: fixed - halfT, maxZ: fixed + halfT };
+  const openBounds = {
+    minX: Math.min(hx, fx) - halfT, maxX: Math.max(hx, fx) + halfT,
+    minZ: Math.min(hz, fz) - halfT, maxZ: Math.max(hz, fz) + halfT,
+  };
+
+  return {
+    type: 'door', name, group, leaf,
+    open: false, openAngle, closedAngle: 0,
+    collider: { active: true, ...closedBounds },
+    closedBounds, openBounds,
+    ix: along ? fixed : gc, iz: along ? gc : fixed, // interaction anchor
+  };
 }

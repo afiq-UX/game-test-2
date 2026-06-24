@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildHouse, ROOMS } from './house.js';
 import { createAppliances } from './appliances.js';
+import { createMinimap } from './minimap.js';
 
 // ---------- Scene ----------
 const scene = new THREE.Scene();
@@ -40,11 +41,23 @@ moon.shadow.bias = -0.0005;
 scene.add(moon);
 
 // ---------- House ----------
-const { walls, wallMeshes } = buildHouse(scene);
+const { walls, wallMeshes, furniture, roof, doors, ceiling } = buildHouse(scene);
+const colliders = walls.concat(furniture); // walls + furniture for player collision
+for (const d of doors) colliders.push(d.collider); // door AABBs (active only when closed)
+
+// Camera occlusion set: walls + ceiling + roof, so tilting up pulls the camera
+// in (GTA/RDR2 style) and it stays below the ceiling — never peeking over walls.
+const occluders = wallMeshes.slice();
+roof.traverse((o) => { if (o.isMesh) occluders.push(o); });
+occluders.push(ceiling);
+for (const d of doors) occluders.push(d.leaf); // closed door blocks the view; open leaf swings aside
 
 // ---------- Appliances ----------
 const appliances = createAppliances(scene);
 document.getElementById('total').textContent = appliances.length;
+
+// ---------- Minimap (always-on, top-right) ----------
+const minimap = createMinimap({ walls, appliances });
 
 // ---------- Player ----------
 const player = new THREE.Group();
@@ -88,52 +101,67 @@ let camYaw = 0;     // 0 = looking north (-Z)
 let camPitch = 0.45;
 let camDistDesired = 5.5;
 let camDistCurrent = 5.5;
+const CAM_DIST_MIN = 2.5;
+const CAM_DIST_MAX = 11;   // shared by wheel (desktop) and pinch (mobile)
 
 // ---------- Input ----------
 const keys = {};
-addEventListener('keydown', e => { keys[e.code] = true; });
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code.startsWith('Arrow')) e.preventDefault(); // arrows drive the camera, not page scroll
+});
 addEventListener('keyup', e => { keys[e.code] = false; });
 
-let dragging = false, lastMX = 0, lastMY = 0;
-renderer.domElement.addEventListener('mousedown', e => {
-  dragging = true;
-  lastMX = e.clientX;
-  lastMY = e.clientY;
+// Mouse look: just MOVE the mouse to turn the camera — no dragging.
+// Clicking the scene captures the pointer (Pointer Lock) so you can keep
+// turning past the window edge; Esc releases it. movementX/Y is delta-based,
+// so look also works before/without a lock (until the cursor hits an edge).
+const LOOK_SENS = 0.0026;
+const cvEl = renderer.domElement;
+cvEl.addEventListener('click', () => {
+  if (document.pointerLockElement !== cvEl) cvEl.requestPointerLock?.();
 });
-addEventListener('mouseup', () => { dragging = false; });
-addEventListener('mouseleave', () => { dragging = false; });
 addEventListener('mousemove', e => {
-  if (!dragging) return;
-  camYaw -= (e.clientX - lastMX) * 0.005;
-  camPitch -= (e.clientY - lastMY) * 0.005;
+  if (gameOver) return;
+  const dx = e.movementX || 0;
+  const dy = e.movementY || 0;
+  camYaw -= dx * LOOK_SENS;
+  camPitch += dy * LOOK_SENS; // non-inverted: move mouse up -> look up
   camPitch = Math.max(0.12, Math.min(1.25, camPitch));
-  lastMX = e.clientX;
-  lastMY = e.clientY;
 });
 renderer.domElement.addEventListener('wheel', e => {
   camDistDesired += Math.sign(e.deltaY) * 0.5;
-  camDistDesired = Math.max(2.5, Math.min(10, camDistDesired));
+  camDistDesired = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, camDistDesired));
   e.preventDefault();
 }, { passive: false });
 // avoid drag-selecting on the canvas
 renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
 let interactTarget = null;
+function interact(target) {
+  if (!target) return;
+  if (target.type === 'door') toggleDoor(target);
+  else if (target.on) toggleOff(target);
+}
 addEventListener('keydown', e => {
-  if (e.code === 'KeyE' && interactTarget && interactTarget.on) {
-    toggleOff(interactTarget);
-  }
+  if (e.code === 'KeyE') interact(interactTarget);
 });
 
 // ---------- Touch controls (mobile) ----------
 const joy = { active: false, x: 0, y: 0 };
 const interactBtn = document.getElementById('interact');
 
-if (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) {
+// Enable touch UI when the PRIMARY pointer is coarse (real phones/tablets) — not
+// merely when a touchscreen exists, which would wrongly show the joystick on
+// mouse-primary touch laptops. Also enable on the first real touchstart as a
+// fallback for devices that mis-report their pointer capabilities.
+function enableTouchUI() {
+  if (document.body.classList.contains('touch')) return;
   document.body.classList.add('touch');
-  // Start a bit further out so the player fits a small screen
-  camDistDesired = 7;
+  camDistDesired = 7; // start further out so the player fits a small screen
 }
+if (window.matchMedia('(pointer: coarse)').matches) enableTouchUI();
+addEventListener('touchstart', enableTouchUI, { once: true, passive: true });
 
 // --- Virtual joystick ---
 const joyEl = document.getElementById('joy');
@@ -157,6 +185,7 @@ function joyReset() {
 }
 joyEl.addEventListener('touchstart', e => {
   e.preventDefault();
+  if (joyId !== null) return; // first finger keeps ownership until it lifts
   const t = e.changedTouches[0];
   joyId = t.identifier;
   const r = joyEl.getBoundingClientRect();
@@ -180,49 +209,79 @@ joyEl.addEventListener('touchcancel', joyReset);
 // --- Interact button ---
 interactBtn.addEventListener('touchstart', e => {
   e.preventDefault();
-  if (interactTarget && interactTarget.on) toggleOff(interactTarget);
+  interact(interactTarget);
 }, { passive: false });
 
 // --- Drag-to-look + pinch-to-zoom on the canvas ---
+// We track ONLY touches that started on the canvas (canvasTouches). Using the
+// global e.touches here would wrongly count a finger resting on the joystick or
+// interact button, so a one-finger look + held joystick was misread as a pinch.
+const cv = renderer.domElement;
+const canvasTouches = new Map(); // identifier -> { x, y }
 let lookId = null, lookX = 0, lookY = 0;
 let pinchStartDist = 0, pinchStartCam = 0;
 
-const cv = renderer.domElement;
+function pinchPair() {
+  const ids = [...canvasTouches.keys()];
+  if (ids.length < 2) return null;
+  return [canvasTouches.get(ids[0]), canvasTouches.get(ids[1])];
+}
+function beginPinch() {
+  const p = pinchPair();
+  if (!p) return;
+  pinchStartDist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+  pinchStartCam = camDistDesired;
+  lookId = null; // pinch suspends look
+}
+function beginLook(id) {
+  const t = canvasTouches.get(id);
+  if (!t) return;
+  lookId = id; lookX = t.x; lookY = t.y;
+}
+
 cv.addEventListener('touchstart', e => {
   e.preventDefault();
-  if (e.touches.length === 2) {
-    const [a, b] = e.touches;
-    pinchStartDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    pinchStartCam = camDistDesired;
-    lookId = null;
-  } else if (lookId === null) {
-    const t = e.changedTouches[0];
-    lookId = t.identifier; lookX = t.clientX; lookY = t.clientY;
-  }
+  for (const t of e.changedTouches) canvasTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+  if (canvasTouches.size >= 2) beginPinch();
+  else if (lookId === null) beginLook(e.changedTouches[0].identifier);
 }, { passive: false });
+
 cv.addEventListener('touchmove', e => {
   e.preventDefault();
-  if (e.touches.length === 2 && pinchStartDist > 0) {
-    const [a, b] = e.touches;
-    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    camDistDesired = Math.max(2.5, Math.min(11, pinchStartCam * (pinchStartDist / d)));
+  for (const t of e.changedTouches) {
+    if (canvasTouches.has(t.identifier)) canvasTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+  }
+  // Pinch: two canvas-owned fingers
+  if (canvasTouches.size >= 2 && pinchStartDist > 0) {
+    const p = pinchPair();
+    const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    if (d > 0) camDistDesired = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, pinchStartCam * (pinchStartDist / d)));
     return;
   }
+  // Look: drag the tracked look finger
+  if (lookId === null) return;
   for (const t of e.changedTouches) {
     if (t.identifier === lookId) {
       camYaw -= (t.clientX - lookX) * 0.006;
-      camPitch -= (t.clientY - lookY) * 0.006;
+      camPitch += (t.clientY - lookY) * 0.006; // non-inverted: drag up -> look up
       camPitch = Math.max(0.12, Math.min(1.25, camPitch));
       lookX = t.clientX; lookY = t.clientY;
     }
   }
 }, { passive: false });
-function endLook(e) {
-  for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null;
-  if (e.touches.length < 2) pinchStartDist = 0;
+
+function endCanvasTouch(e) {
+  for (const t of e.changedTouches) canvasTouches.delete(t.identifier);
+  if (canvasTouches.size < 2) {
+    pinchStartDist = 0;
+    // If a pinch (or a lifted look finger) degraded to one canvas finger,
+    // hand that finger control of look so drag-to-look resumes without a re-tap.
+    if (canvasTouches.size === 1) beginLook(canvasTouches.keys().next().value);
+    else lookId = null;
+  }
 }
-cv.addEventListener('touchend', endLook, { passive: false });
-cv.addEventListener('touchcancel', endLook, { passive: false });
+cv.addEventListener('touchend', endCanvasTouch, { passive: false });
+cv.addEventListener('touchcancel', endCanvasTouch, { passive: false });
 
 // ---------- Web Audio click ----------
 let audioCtx = null;
@@ -230,6 +289,8 @@ function clickSound() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const ctx = audioCtx;
+    // iOS/Safari starts (and can re-suspend) the context; resume inside the user gesture
+    if (ctx.state === 'suspended') ctx.resume();
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -254,6 +315,16 @@ function toggleOff(a) {
     a.screen.color.setHex(0x0a0a0a);
     a.screen.needsUpdate = true;
   }
+  clickSound();
+}
+
+function toggleDoor(d) {
+  d.open = !d.open;
+  // Move the collider to match: blocks the doorway when closed, blocks the
+  // swung-open leaf when open (so you can pass the doorway but not the panel).
+  const b = d.open ? d.openBounds : d.closedBounds;
+  d.collider.minX = b.minX; d.collider.maxX = b.maxX;
+  d.collider.minZ = b.minZ; d.collider.maxZ = b.maxZ;
   clickSound();
 }
 
@@ -286,7 +357,8 @@ function currentRoomName(pos) {
 
 // ---------- Collision ----------
 function collide(pos, radius) {
-  for (const w of walls) {
+  for (const w of colliders) {
+    if (w.active === false) continue; // open door — passable
     const cx = Math.max(w.minX, Math.min(pos.x, w.maxX));
     const cz = Math.max(w.minZ, Math.min(pos.z, w.maxZ));
     const dx = pos.x - cx;
@@ -296,6 +368,33 @@ function collide(pos, radius) {
       const d = Math.sqrt(d2) || 0.0001;
       pos.x = cx + (dx / d) * radius;
       pos.z = cz + (dz / d) * radius;
+    }
+  }
+}
+
+// Keep the camera inside the building so it can never go through / see past a
+// wall. Clamps to the outer envelope while indoors, then pushes it out of any
+// structural wall it lands in (at wall height). Only walls — not low furniture,
+// which the camera flies safely above.
+const HOUSE_X = 15, HOUSE_Z = 12, WALL_TOP = 3.0, CAM_WALL_R = 0.3;
+function clampCameraInside(cam, p) {
+  if (p.x > -HOUSE_X && p.x < HOUSE_X && p.z > -HOUSE_Z && p.z < HOUSE_Z) {
+    const m = 0.3;
+    cam.x = Math.max(-HOUSE_X + m, Math.min(HOUSE_X - m, cam.x));
+    cam.z = Math.max(-HOUSE_Z + m, Math.min(HOUSE_Z - m, cam.z));
+    if (cam.y > 2.85) cam.y = 2.85; // stay under the ceiling (no peeking over walls)
+  }
+  if (cam.y < WALL_TOP) {
+    for (const w of walls) {
+      const cx = Math.max(w.minX, Math.min(cam.x, w.maxX));
+      const cz = Math.max(w.minZ, Math.min(cam.z, w.maxZ));
+      const dx = cam.x - cx, dz = cam.z - cz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < CAM_WALL_R * CAM_WALL_R) {
+        const d = Math.sqrt(d2) || 0.0001;
+        cam.x = cx + (dx / d) * CAM_WALL_R;
+        cam.z = cz + (dz / d) * CAM_WALL_R;
+      }
     }
   }
 }
@@ -315,18 +414,28 @@ function step() {
   const dt = Math.min(0.05, clock.getDelta());
 
   if (!gameOver) {
+    // Arrow keys orbit the camera (desktop); same sign convention as mouse drag
+    const camKey = 1.9 * dt;
+    if (keys['ArrowLeft'])  camYaw += camKey;
+    if (keys['ArrowRight']) camYaw -= camKey;
+    if (keys['ArrowUp'])    camPitch -= camKey; // non-inverted: up -> look up
+    if (keys['ArrowDown'])  camPitch += camKey;
+    camPitch = Math.max(0.12, Math.min(1.25, camPitch));
+
     // Player movement, camera-relative on XZ
     tmpForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw));
     tmpRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
     tmpMove.set(0, 0, 0);
-    if (keys['KeyW'] || keys['ArrowUp'])    tmpMove.add(tmpForward);
-    if (keys['KeyS'] || keys['ArrowDown'])  tmpMove.sub(tmpForward);
-    if (keys['KeyD'] || keys['ArrowRight']) tmpMove.add(tmpRight);
-    if (keys['KeyA'] || keys['ArrowLeft'])  tmpMove.sub(tmpRight);
-    // Analog joystick (mobile): forward = joy.y, strafe = joy.x
     if (joy.active) {
+      // Analog joystick (mobile): forward = joy.y, strafe = joy.x. Takes
+      // precedence over keys so the two inputs never fight on hybrid devices.
       tmpMove.addScaledVector(tmpForward, joy.y);
       tmpMove.addScaledVector(tmpRight, joy.x);
+    } else {
+      if (keys['KeyW']) tmpMove.add(tmpForward);
+      if (keys['KeyS']) tmpMove.sub(tmpForward);
+      if (keys['KeyD']) tmpMove.add(tmpRight);
+      if (keys['KeyA']) tmpMove.sub(tmpRight);
     }
     const len = tmpMove.length();
     const moving = len > 0.06;
@@ -359,7 +468,13 @@ function step() {
       }
     }
 
-    // Nearest interactable (XZ distance)
+    // Animate doors toward their open/closed angle
+    for (const dr of doors) {
+      const target = dr.open ? dr.openAngle : dr.closedAngle;
+      dr.group.rotation.y += (target - dr.group.rotation.y) * Math.min(1, dt * 10);
+    }
+
+    // Nearest interactable (XZ distance) — appliances that are on, plus doors
     let nearest = null;
     let nearestDist = 1.8;
     for (const a of appliances) {
@@ -369,10 +484,18 @@ function step() {
       const d = Math.sqrt(dx * dx + dz * dz);
       if (d < nearestDist) { nearestDist = d; nearest = a; }
     }
+    for (const dr of doors) {
+      const dx = dr.ix - player.position.x;
+      const dz = dr.iz - player.position.z;
+      const d = Math.sqrt(dx * dx + dz * dz);
+      if (d < nearestDist) { nearestDist = d; nearest = dr; }
+    }
     interactTarget = nearest;
     if (nearest) {
       promptEl.style.display = 'block';
-      promptTextEl.textContent = ` Tutup ${nearest.name}`;
+      promptTextEl.textContent = nearest.type === 'door'
+        ? (nearest.open ? ' Tutup pintu' : ' Buka pintu')
+        : ` Tutup ${nearest.name}`;
       interactBtn.classList.add('live');
     } else {
       promptEl.style.display = 'none';
@@ -385,13 +508,15 @@ function step() {
     const elapsed = (performance.now() - gameStart) / 1000;
     timerEl.textContent = formatTime(elapsed);
     roomEl.textContent = currentRoomName(player.position);
+    minimap.update(player, camYaw);
 
     if (remaining === 0) {
       gameOver = true;
       frozenTime = elapsed;
       winTimeEl.textContent = formatTime(elapsed);
       winEl.style.display = 'flex';
-      document.getElementById('touch').style.display = 'none';
+      document.body.classList.add('gameover'); // hides #touch via CSS
+      document.exitPointerLock?.();             // free the cursor for the button
     }
   }
 
@@ -406,12 +531,17 @@ function step() {
   let dist = camDistDesired;
   raycaster.set(tmpHead, tmpDir);
   raycaster.far = dist + 0.5;
-  const hits = raycaster.intersectObjects(wallMeshes, false);
+  // Occlude against walls AND roof: tilting up / backing into a wall pulls the
+  // camera in toward the player instead of clipping through (GTA/RDR2 style).
+  // Low floor + bigger buffer so it stays IN FRONT of a near wall rather than
+  // being forced past it.
+  const hits = raycaster.intersectObjects(occluders, false);
   if (hits.length && hits[0].distance < dist) {
-    dist = Math.max(1.5, hits[0].distance - 0.25);
+    dist = Math.max(0.4, hits[0].distance - 0.3);
   }
   camDistCurrent += (dist - camDistCurrent) * Math.min(1, dt * 12);
   camera.position.copy(tmpHead).addScaledVector(tmpDir, camDistCurrent);
+  clampCameraInside(camera.position, player.position); // never leave the house
   camera.lookAt(tmpHead);
 
   renderer.render(scene, camera);
