@@ -31,6 +31,7 @@ export const ApplianceConfigs = [
     light: { ...L.warmCeiling, offset: [0, -0.3, 0] },
     position: [0, 2.75, 5],
     rotation: 0,
+    scale: 4,
   },
   {
     id: 'standingLamp',
@@ -56,7 +57,7 @@ export const ApplianceConfigs = [
     materials: { body: 'blackPlastic' },
     behaviors: [],
     light: null,
-    position: [-4.2, 0.62, -1.4],
+    position: [-4.49, 0.60, -1.57],
     rotation: 0,
   },
   {
@@ -189,6 +190,7 @@ export const ApplianceConfigs = [
     light: { ...L.warmCeiling, offset: [0, -0.3, 0] },
     position: [10, 2.75, 5],
     rotation: 0,
+    scale: 4,
   },
 
   // ========== BEDROOM 1 ==========

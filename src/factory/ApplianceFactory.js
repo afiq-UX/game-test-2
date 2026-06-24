@@ -16,15 +16,27 @@ export function createAppliance(config) {
   const { meshes, meta } = createGeometry(config.geometry, config.materials);
 
   const group = new THREE.Group();
-  for (const m of meshes) group.add(m);
+  const scale = config.scale ?? 1;
 
-  // Indicator LED
+  // Scale only the model geometry (in its own subgroup) so the LED indicator
+  // below keeps its normal size. Behavior targets (e.g. 'rotor') are found by
+  // name, so wrapping the meshes in a subgroup doesn't break traversal.
+  if (scale !== 1) {
+    const modelGroup = new THREE.Group();
+    for (const m of meshes) modelGroup.add(m);
+    modelGroup.scale.setScalar(scale);
+    group.add(modelGroup);
+  } else {
+    for (const m of meshes) group.add(m);
+  }
+
+  // Indicator LED — position scales with the model, size stays constant
   const indicator = new THREE.Mesh(INDICATOR_GEO, INDICATOR_MAT);
-  const indPos = meta.indicatorPos || new THREE.Vector3(0, 1.5, 0);
+  const indPos = (meta.indicatorPos || new THREE.Vector3(0, 1.5, 0)).clone().multiplyScalar(scale);
   indicator.position.copy(indPos);
   group.add(indicator);
 
-  // Point light (optional)
+  // Point light (optional) — offset scales with the model
   let pointLight = null;
   if (config.light) {
     const { color, intensity, distance, decay, offset } = config.light;
@@ -34,7 +46,7 @@ export function createAppliance(config) {
       distance ?? 8,
       decay ?? 1.5
     );
-    if (offset) pointLight.position.set(offset[0], offset[1], offset[2]);
+    if (offset) pointLight.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
     group.add(pointLight);
   }
 

@@ -71,6 +71,64 @@ loaderEl.classList.add('hidden');
 const appliances = createAllAppliances(scene, ApplianceConfigs);
 document.getElementById('total').textContent = appliances.length;
 
+// ---------- Static furniture ----------
+// Custom side table — mahogany style, splayed cylindrical legs, lower shelf.
+// Surface 0.65×0.50 (>2× the router's 0.30×0.22). Flush into NW corner of LIV.
+{
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x8B3A20, roughness: 0.65, metalness: 0 });
+
+  function shdMesh(geo) {
+    const m = new THREE.Mesh(geo, woodMat);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  }
+
+  // Tabletop
+  const top = shdMesh(new THREE.BoxGeometry(0.65, 0.025, 0.50));
+  top.position.set(0, 0.5675, 0);
+
+  // Lower shelf at ~35% height
+  const shelf = shdMesh(new THREE.BoxGeometry(0.52, 0.020, 0.40));
+  shelf.position.set(0, 0.21, 0);
+
+  // Splayed cylindrical legs — bottoms extend BEYOND the tabletop edge (±0.325/±0.25)
+  // so legs visibly stick out and sit against the wall, not the tabletop surface.
+  const legDefs = [
+    { tx: -0.20, tz: -0.14, bx: -0.38, bz: -0.30 },
+    { tx:  0.20, tz: -0.14, bx:  0.38, bz: -0.30 },
+    { tx: -0.20, tz:  0.14, bx: -0.38, bz:  0.30 },
+    { tx:  0.20, tz:  0.14, bx:  0.38, bz:  0.30 },
+  ];
+  const legTopY = 0.555, legBotY = 0.01;
+
+  const legs = legDefs.map(({ tx, tz, bx, bz }) => {
+    const topV = new THREE.Vector3(tx, legTopY, tz);
+    const botV = new THREE.Vector3(bx, legBotY, bz);
+    const len = topV.distanceTo(botV);
+    const leg = shdMesh(new THREE.CylinderGeometry(0.023, 0.030, len, 10));
+    leg.position.copy(topV.clone().add(botV).multiplyScalar(0.5));
+    leg.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(tx - bx, legTopY - legBotY, tz - bz).normalize()
+    );
+    return leg;
+  });
+
+  const tableGroup = new THREE.Group();
+  tableGroup.add(top, shelf, ...legs);
+  // Back-left leg bottom (local -0.38, -0.30) embedded slightly INTO both walls so
+  // there is zero visible gap. Walls: west x=-4.9, north z=-1.9.
+  // Leg outer surface just touches the walls, nothing penetrates.
+  // Back-left leg bottom center (-0.38, -0.30) + 0.03 radius kisses x=-4.9 / z=-1.9.
+  // table_x = -4.9 + 0.38 + 0.03 = -4.49,  table_z = -1.9 + 0.30 + 0.03 = -1.57
+  tableGroup.position.set(-4.49, 0, -1.57);
+  scene.add(tableGroup);
+
+  // Collision footprint (tabletop bounds)
+  colliders.push({ minX: -4.815, maxX: -4.165, minZ: -1.82, maxZ: -1.32 });
+}
+
 // ---------- Minimap (always-on, top-right) ----------
 const minimap = createMinimap({ walls, appliances });
 
