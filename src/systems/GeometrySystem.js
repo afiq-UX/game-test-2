@@ -8,10 +8,13 @@ export function registerGeometry(type, builder) {
 }
 
 // Returns { meshes: THREE.Object3D[], meta: { indicatorPos: Vector3, ... } }
-export function createGeometry(type, materials) {
+// The full config is passed through as a second arg for builders that need
+// per-instance data (e.g. coveLight reads config.size = [width, depth]).
+// Builders that only need materials simply ignore it.
+export function createGeometry(type, materials, config) {
   const builder = registry.get(type);
   if (!builder) throw new Error(`No geometry registered for: "${type}"`);
-  return builder(materials);
+  return builder(materials, config);
 }
 
 export function hasGeometry(type) {

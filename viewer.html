@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asset Viewer — Rumah Off</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100vh; overflow: hidden; background: #1b1d24; font-family: system-ui, sans-serif; color: #fff; }
+      canvas { display: block; }
+      #panel {
+        position: fixed; top: 12px; left: 12px; z-index: 10;
+        background: rgba(10,10,14,0.82); border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 10px; padding: 14px 16px; backdrop-filter: blur(6px);
+        min-width: 220px;
+      }
+      #panel h1 { font-size: 13px; margin: 0 0 10px; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.06em; }
+      #panel select { width: 100%; padding: 6px 8px; font-size: 14px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #444; background: #22242c; color: #fff; }
+      #panel .row { display: flex; justify-content: space-between; font-size: 12px; opacity: 0.75; padding: 2px 0; }
+      #panel .row b { color: #f4c39b; font-weight: 600; }
+      #panel button { width: 100%; margin-top: 8px; padding: 7px; border-radius: 6px; border: 0; background: #3a3d4a; color: #fff; cursor: pointer; font-size: 13px; }
+      #panel button:hover { background: #4a4e5e; }
+      #panel button.active { background: #f4c39b; color: #2a1810; }
+      #panel .btnRow { display: flex; gap: 6px; }
+      #panel .btnRow button { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <div id="panel">
+      <h1>Appliance Viewer</h1>
+      <select id="pick"></select>
+      <div class="row">Source: <b id="src">—</b></div>
+      <div class="row">Meshes: <b id="meshCount">—</b></div>
+      <div class="row">Triangles: <b id="triCount">—</b></div>
+      <div class="row">True size (m): <b id="trueSize">—</b></div>
+      <div class="btnRow">
+        <button id="litStudio" class="active">Studio</button>
+        <button id="litHouse">House-like</button>
+      </div>
+    </div>
+    <script type="module" src="/src/viewerMain.js"></script>
+  </body>
+</html>

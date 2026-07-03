@@ -9,4 +9,7 @@ export const LightTokens = {
   kitchenCeiling:  { color: 0xfff0c0, intensity: 1.5, distance: 10, decay: 1.5 },
   bedroomCeiling:  { color: 0xfff0c0, intensity: 1.2, distance: 8, decay: 1.5 },
   bathCeiling:     { color: 0xe6f0ff, intensity: 1.0, distance: 8, decay: 1.5 },
+  // Cove light fills the whole room (indirect wash): high intensity with a
+  // gentle falloff so the floor and far corners read lit, not just the ceiling.
+  coveLight:       { color: 0xffd9a0, intensity: 4.5, distance: 13, decay: 1.1 },
 };

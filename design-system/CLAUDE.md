@@ -44,6 +44,7 @@ ApplianceConfigs[i]
 
 | File | What It Specs |
 |------|---------------|
+| `00-art-style.md` | Art direction ("grounded realism"), dimensions, origin conventions — supersedes 03–08 geometry for rebuilt models |
 | `01-tokens.md` | Material tokens, light tokens, quality tiers |
 | `02-systems.md` | MaterialSystem, GeometrySystem, BehaviorSystem, QualitySystem APIs |
 | `03-geometry-screens.md` | TV, computer monitor |

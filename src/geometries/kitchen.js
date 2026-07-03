@@ -1,38 +1,103 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { registerGeometry, solidMesh } from '../systems/GeometrySystem.js';
 import { getMaterial } from '../systems/MaterialSystem.js';
 import { getModel } from '../systems/ModelLoader.js';
 
-// Fridge (Peti Sejuk)
+// Fridge (Peti Sejuk) — top-freezer, 0.78 × 1.80 × 0.72. Origin at floor.
+// Faces +Z. See design-system/00-art-style.md.
 registerGeometry('fridge', (mats) => {
-  const model = getModel('fridge', mats, new THREE.Vector3(-0.4, 2.0, 0.4));
-  if (model) return model;
+  const bodyMat = getMaterial(mats.body ?? 'offWhite');
+  const handleMat = getMaterial(mats.handle ?? 'grayPlastic');
 
-  const body = solidMesh(new THREE.BoxGeometry(1.0, 2.1, 0.75), getMaterial(mats.body ?? 'offWhite'));
-  body.position.y = 1.05;
-  const seam = solidMesh(new THREE.BoxGeometry(1.02, 0.02, 0.76), getMaterial(mats.seam ?? 'lightGray'));
-  seam.position.y = 1.3;
-  const handle1 = solidMesh(new THREE.BoxGeometry(0.05, 0.5, 0.04), getMaterial(mats.handle ?? 'grayPlastic'));
-  handle1.position.set(0.4, 1.7, 0.4);
-  const handle2 = solidMesh(new THREE.BoxGeometry(0.05, 0.3, 0.04), getMaterial(mats.handle ?? 'grayPlastic'));
-  handle2.position.set(0.4, 0.7, 0.4);
+  // Recessed kick plate at the floor
+  const kick = solidMesh(new THREE.BoxGeometry(0.70, 0.06, 0.62), getMaterial('darkInset'));
+  kick.position.y = 0.03;
+
+  // Cabinet body
+  const body = solidMesh(new RoundedBoxGeometry(0.78, 1.74, 0.68, 2, 0.02), bodyMat);
+  body.position.set(0, 0.06 + 0.87, -0.02);
+
+  // Doors sit proud of the cabinet with a visible gap between them.
+  // Fridge door (lower ⅔): y 0.07..1.16   Freezer door (upper ⅓): y 1.18..1.79
+  const doorFridge = solidMesh(new RoundedBoxGeometry(0.76, 1.09, 0.035, 2, 0.012), bodyMat);
+  doorFridge.position.set(0, 0.615, 0.3375);
+  const doorFreezer = solidMesh(new RoundedBoxGeometry(0.76, 0.61, 0.035, 2, 0.012), bodyMat);
+  doorFreezer.position.set(0, 1.485, 0.3375);
+
+  // Door gap seam reads as a dark line between the doors
+  const seam = solidMesh(new THREE.BoxGeometry(0.76, 0.02, 0.03), getMaterial(mats.seam ?? 'lightGray'));
+  seam.position.set(0, 1.17, 0.335);
+
+  // Vertical bar handles near the left edge (hinges on the right), each on
+  // two small standoffs
+  const meshes = [kick, body, doorFridge, doorFreezer, seam];
+  function barHandle(cy, len) {
+    const bar = solidMesh(new THREE.CylinderGeometry(0.013, 0.013, len, 10), handleMat);
+    bar.position.set(-0.30, cy, 0.395);
+    meshes.push(bar);
+    for (const dy of [-len / 2 + 0.03, len / 2 - 0.03]) {
+      const standoff = solidMesh(new THREE.CylinderGeometry(0.008, 0.008, 0.035, 8), handleMat);
+      standoff.rotation.x = Math.PI / 2;
+      standoff.position.set(-0.30, cy + dy, 0.372);
+      meshes.push(standoff);
+    }
+  }
+  barHandle(0.90, 0.55); // fridge door
+  barHandle(1.42, 0.32); // freezer door
+
   return {
-    meshes: [body, seam, handle1, handle2],
-    meta: { indicatorPos: new THREE.Vector3(-0.4, 2.0, 0.4) },
+    meshes,
+    meta: { indicatorPos: new THREE.Vector3(0.24, 1.62, 0.36) },
   };
 });
 
-// Microwave
+// Microwave — 0.50 × 0.30 × 0.38 counter-top. Origin at counter surface.
+// Window on the left ⅔, control strip on the right ⅓. Faces +Z.
 registerGeometry('microwave', (mats) => {
-  const model = getModel('microwave', mats, new THREE.Vector3(0.25, -0.08, 0.21));
-  if (model) return model;
+  const bodyMat = getMaterial(mats.body ?? 'darkGray');
+  const meshes = [];
 
-  const body = solidMesh(new THREE.BoxGeometry(0.6, 0.35, 0.4), getMaterial(mats.body ?? 'darkGray'));
-  const door = solidMesh(new THREE.BoxGeometry(0.4, 0.28, 0.02), getMaterial(mats.door ?? 'tintedGlass'));
-  door.position.set(-0.05, 0, 0.21);
+  // Four low feet + body
+  for (const [fx, fz] of [[-0.21, -0.15], [0.21, -0.15], [-0.21, 0.15], [0.21, 0.15]]) {
+    const foot = solidMesh(new THREE.CylinderGeometry(0.014, 0.016, 0.012, 8), getMaterial('rubber'));
+    foot.position.set(fx, 0.006, fz);
+    meshes.push(foot);
+  }
+  const body = solidMesh(new RoundedBoxGeometry(0.50, 0.30, 0.38, 2, 0.015), bodyMat);
+  body.position.y = 0.162;
+  meshes.push(body);
+
+  // Door frame + tinted window (left ⅔ of the front face)
+  const doorFrame = solidMesh(new RoundedBoxGeometry(0.315, 0.25, 0.018, 2, 0.008), bodyMat);
+  doorFrame.position.set(-0.075, 0.165, 0.192);
+  const glass = solidMesh(new THREE.BoxGeometry(0.265, 0.20, 0.006), getMaterial(mats.door ?? 'tintedGlass'));
+  glass.position.set(-0.075, 0.165, 0.2035);
+  meshes.push(doorFrame, glass);
+
+  // Door handle bar on the left edge of the control strip
+  const handle = solidMesh(new THREE.CylinderGeometry(0.008, 0.008, 0.24, 8), getMaterial('grayPlastic'));
+  handle.position.set(0.095, 0.165, 0.207);
+  meshes.push(handle);
+
+  // Control strip (right ⅓): dark panel, display chip, button grid
+  const strip = solidMesh(new THREE.BoxGeometry(0.115, 0.25, 0.006), getMaterial('darkInset'));
+  strip.position.set(0.175, 0.165, 0.1935);
+  meshes.push(strip);
+  const display = solidMesh(new THREE.BoxGeometry(0.08, 0.032, 0.004), getMaterial('lightGray'));
+  display.position.set(0.175, 0.255, 0.1975);
+  meshes.push(display);
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 2; col++) {
+      const btn = solidMesh(new THREE.BoxGeometry(0.03, 0.018, 0.004), getMaterial('grayPlastic'));
+      btn.position.set(0.155 + col * 0.042, 0.21 - row * 0.036, 0.1975);
+      meshes.push(btn);
+    }
+  }
+
   return {
-    meshes: [body, door],
-    meta: { indicatorPos: new THREE.Vector3(0.25, -0.08, 0.21) },
+    meshes,
+    meta: { indicatorPos: new THREE.Vector3(0.175, 0.285, 0.20) },
   };
 });
 
@@ -68,16 +133,49 @@ registerGeometry('kettle', (mats) => {
   };
 });
 
-// Toaster
+// Toaster — 2-slice, 0.28 × 0.19 × 0.17, domed shoulders. Origin at counter
+// surface. Slots on top, lever on the right side, dial on the front.
 registerGeometry('toaster', (mats) => {
-  const model = getModel('toaster', mats, new THREE.Vector3(0.15, -0.08, 0.12));
-  if (model) return model;
+  const bodyMat = getMaterial(mats.body ?? 'brushedSteel');
+  const slotMat = getMaterial(mats.slot ?? 'blackPlastic');
+  const meshes = [];
 
-  const body = solidMesh(new THREE.BoxGeometry(0.35, 0.22, 0.22), getMaterial(mats.body ?? 'brushedSteel'));
-  const slot = solidMesh(new THREE.BoxGeometry(0.25, 0.02, 0.08), getMaterial(mats.slot ?? 'blackPlastic'));
-  slot.position.y = 0.12;
+  // Dark plinth base
+  const plinth = solidMesh(new RoundedBoxGeometry(0.29, 0.03, 0.18, 2, 0.008), getMaterial('darkGray'));
+  plinth.position.y = 0.015;
+  meshes.push(plinth);
+
+  // Body with generously rounded shoulders
+  const body = solidMesh(new RoundedBoxGeometry(0.28, 0.165, 0.17, 3, 0.04), bodyMat);
+  body.position.y = 0.11;
+  meshes.push(body);
+
+  // Two slots inset into the top
+  for (const dz of [-0.034, 0.034]) {
+    const rim = solidMesh(new THREE.BoxGeometry(0.21, 0.008, 0.036), slotMat);
+    rim.position.set(0, 0.192, dz);
+    const slot = solidMesh(new THREE.BoxGeometry(0.19, 0.008, 0.02), getMaterial('darkInset'));
+    slot.position.set(0, 0.196, dz);
+    meshes.push(rim, slot);
+  }
+
+  // Lever on the right side, riding a slim track
+  const track = solidMesh(new THREE.BoxGeometry(0.006, 0.10, 0.012), slotMat);
+  track.position.set(0.142, 0.115, 0);
+  const lever = solidMesh(new RoundedBoxGeometry(0.022, 0.026, 0.05, 2, 0.006), slotMat);
+  lever.position.set(0.152, 0.14, 0);
+  meshes.push(track, lever);
+
+  // Browning dial + cancel button on the front
+  const dial = solidMesh(new THREE.CylinderGeometry(0.022, 0.022, 0.012, 16), slotMat);
+  dial.rotation.x = Math.PI / 2;
+  dial.position.set(0.08, 0.07, 0.088);
+  const btn = solidMesh(new THREE.BoxGeometry(0.03, 0.014, 0.008), slotMat);
+  btn.position.set(0.08, 0.115, 0.086);
+  meshes.push(dial, btn);
+
   return {
-    meshes: [body, slot],
-    meta: { indicatorPos: new THREE.Vector3(0.15, -0.08, 0.12) },
+    meshes,
+    meta: { indicatorPos: new THREE.Vector3(0.03, 0.07, 0.09) },
   };
 });

@@ -1,13 +1,20 @@
 import * as THREE from 'three';
-import { buildHouse, ROOMS } from './house.js';
+import { buildHouse } from './house.js';
 import { createMinimap } from './minimap.js';
 import './geometries/index.js';
 import { ApplianceConfigs } from './configs/appliances.js';
 import { createAllAppliances, tickAppliances, turnOffAppliance } from './factory/ApplianceFactory.js';
-import { detectQuality, enforceLightBudget } from './systems/QualitySystem.js';
+import { detectQuality, getQualityConfig, enforceLightBudget } from './systems/QualitySystem.js';
 import { preloadModels } from './systems/ModelLoader.js';
+import { createPlayer, PLAYER_RADIUS } from './player.js';
+import { createCameraController } from './cameraController.js';
+import { collide } from './collision.js';
+import { createHud, formatTime, currentRoomName } from './hud.js';
+import { clickSound } from './audio.js';
+import { setupDesktopControls, setupTouchControls } from './controls.js';
 
 detectQuality();
+const quality = getQualityConfig();
 
 // ---------- Scene ----------
 const scene = new THREE.Scene();
@@ -17,12 +24,12 @@ scene.fog = new THREE.Fog(0x070912, 22, 55);
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, quality.maxPixelRatio));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = quality.toneMappingExposure;
 document.body.appendChild(renderer.domElement);
 
 addEventListener('resize', () => {
@@ -36,7 +43,7 @@ scene.add(new THREE.AmbientLight(0xaab4d4, 0.22));
 const moon = new THREE.DirectionalLight(0xc6d4ff, 0.55);
 moon.position.set(12, 22, 8);
 moon.castShadow = true;
-moon.shadow.mapSize.set(1024, 1024);
+moon.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
 moon.shadow.camera.near = 1;
 moon.shadow.camera.far = 70;
 moon.shadow.camera.left = -25;
@@ -69,321 +76,40 @@ loaderEl.classList.add('hidden');
 
 // ---------- Appliances ----------
 const appliances = createAllAppliances(scene, ApplianceConfigs);
-document.getElementById('total').textContent = appliances.length;
 
-// ---------- Static furniture ----------
-// Custom side table — mahogany style, splayed cylindrical legs, lower shelf.
-// Surface 0.65×0.50 (>2× the router's 0.30×0.22). Flush into NW corner of LIV.
-{
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x8B3A20, roughness: 0.65, metalness: 0 });
-
-  function shdMesh(geo) {
-    const m = new THREE.Mesh(geo, woodMat);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    return m;
-  }
-
-  // Tabletop
-  const top = shdMesh(new THREE.BoxGeometry(0.65, 0.025, 0.50));
-  top.position.set(0, 0.5675, 0);
-
-  // Lower shelf at ~35% height
-  const shelf = shdMesh(new THREE.BoxGeometry(0.52, 0.020, 0.40));
-  shelf.position.set(0, 0.21, 0);
-
-  // Splayed cylindrical legs — bottoms extend BEYOND the tabletop edge (±0.325/±0.25)
-  // so legs visibly stick out and sit against the wall, not the tabletop surface.
-  const legDefs = [
-    { tx: -0.20, tz: -0.14, bx: -0.38, bz: -0.30 },
-    { tx:  0.20, tz: -0.14, bx:  0.38, bz: -0.30 },
-    { tx: -0.20, tz:  0.14, bx: -0.38, bz:  0.30 },
-    { tx:  0.20, tz:  0.14, bx:  0.38, bz:  0.30 },
-  ];
-  const legTopY = 0.555, legBotY = 0.01;
-
-  const legs = legDefs.map(({ tx, tz, bx, bz }) => {
-    const topV = new THREE.Vector3(tx, legTopY, tz);
-    const botV = new THREE.Vector3(bx, legBotY, bz);
-    const len = topV.distanceTo(botV);
-    const leg = shdMesh(new THREE.CylinderGeometry(0.023, 0.030, len, 10));
-    leg.position.copy(topV.clone().add(botV).multiplyScalar(0.5));
-    leg.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(tx - bx, legTopY - legBotY, tz - bz).normalize()
-    );
-    return leg;
-  });
-
-  const tableGroup = new THREE.Group();
-  tableGroup.add(top, shelf, ...legs);
-  // Back-left leg bottom (local -0.38, -0.30) embedded slightly INTO both walls so
-  // there is zero visible gap. Walls: west x=-4.9, north z=-1.9.
-  // Leg outer surface just touches the walls, nothing penetrates.
-  // Back-left leg bottom center (-0.38, -0.30) + 0.03 radius kisses x=-4.9 / z=-1.9.
-  // table_x = -4.9 + 0.38 + 0.03 = -4.49,  table_z = -1.9 + 0.30 + 0.03 = -1.57
-  tableGroup.position.set(-4.49, 0, -1.57);
-  scene.add(tableGroup);
-
-  // Collision footprint (tabletop bounds)
-  colliders.push({ minX: -4.815, maxX: -4.165, minZ: -1.82, maxZ: -1.32 });
+// Appliance meshes flagged as camera occluders (e.g. the cove-light soffit,
+// which sits right at the camera's indoor height clamp) join the walls/roof/
+// ceiling occlusion set so the camera pulls in instead of entering them.
+for (const a of appliances) {
+  a.group.traverse((o) => { if (o.isMesh && o.userData.occludeCamera) occluders.push(o); });
 }
 
-// ---------- Minimap (always-on, top-right) ----------
-const minimap = createMinimap({ walls, appliances });
-
 // ---------- Player ----------
-const player = new THREE.Group();
-const playerBody = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.28, 0.32, 0.85, 16),
-  new THREE.MeshStandardMaterial({ color: 0x2f5fa8, roughness: 0.8 })
-);
-playerBody.position.y = 0.5;
-playerBody.castShadow = true;
-
-const playerHead = new THREE.Mesh(
-  new THREE.SphereGeometry(0.22, 16, 16),
-  new THREE.MeshStandardMaterial({ color: 0xf4c39b, roughness: 0.7 })
-);
-playerHead.position.y = 1.12;
-playerHead.castShadow = true;
-
-const hair = new THREE.Mesh(
-  new THREE.SphereGeometry(0.235, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2.1),
-  new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 })
-);
-hair.position.y = 1.16;
-hair.castShadow = true;
-
-// Tiny "nose" so we can see which way the kid faces
-const nose = new THREE.Mesh(
-  new THREE.ConeGeometry(0.04, 0.08, 8),
-  new THREE.MeshStandardMaterial({ color: 0xe8a878 })
-);
-nose.position.set(0, 1.1, 0.21);
-nose.rotation.x = Math.PI / 2;
-
-player.add(playerBody, playerHead, hair, nose);
-player.position.set(0, 0, 4);
-player.rotation.y = 0; // facing north (toward TV)
+const { player, playerBody } = createPlayer();
 scene.add(player);
-const PLAYER_RADIUS = 0.32;
 
-// ---------- Camera state ----------
-let camYaw = 0;     // 0 = looking north (-Z)
-let camPitch = 0.45;
-let camDistDesired = 5.5;
-let camDistCurrent = 5.5;
-const CAM_DIST_MIN = 2.5;
-const CAM_DIST_MAX = 11;   // shared by wheel (desktop) and pinch (mobile)
+// ---------- Minimap & HUD ----------
+const minimap = createMinimap({ walls, appliances });
+const hud = createHud();
+hud.setTotal(appliances.length);
 
-// ---------- Input ----------
-const keys = {};
-addEventListener('keydown', e => {
-  keys[e.code] = true;
-  if (e.code.startsWith('Arrow')) e.preventDefault(); // arrows drive the camera, not page scroll
-});
-addEventListener('keyup', e => { keys[e.code] = false; });
+// ---------- Camera ----------
+const cam = createCameraController(camera, occluders, walls);
 
-// Mouse look: just MOVE the mouse to turn the camera — no dragging.
-// Clicking the scene captures the pointer (Pointer Lock) so you can keep
-// turning past the window edge; Esc releases it. movementX/Y is delta-based,
-// so look also works before/without a lock (until the cursor hits an edge).
-const LOOK_SENS = 0.0026;
-const cvEl = renderer.domElement;
-cvEl.addEventListener('click', () => {
-  if (document.pointerLockElement !== cvEl) cvEl.requestPointerLock?.();
-});
-addEventListener('mousemove', e => {
-  if (gameOver) return;
-  const dx = e.movementX || 0;
-  const dy = e.movementY || 0;
-  camYaw -= dx * LOOK_SENS;
-  camPitch += dy * LOOK_SENS; // non-inverted: move mouse up -> look up
-  camPitch = Math.max(0.12, Math.min(1.25, camPitch));
-});
-renderer.domElement.addEventListener('wheel', e => {
-  camDistDesired += Math.sign(e.deltaY) * 0.5;
-  camDistDesired = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, camDistDesired));
-  e.preventDefault();
-}, { passive: false });
-// avoid drag-selecting on the canvas
-renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
-
+// ---------- Game state & interaction ----------
+let gameOver = false;
+const gameStart = performance.now();
 let interactTarget = null;
+
 function interact(target) {
   if (!target) return;
   if (target.type === 'door') toggleDoor(target);
   else if (target.on) toggleOff(target);
 }
-addEventListener('keydown', e => {
-  if (e.code === 'KeyE') interact(interactTarget);
-});
-
-// ---------- Touch controls (mobile) ----------
-const joy = { active: false, x: 0, y: 0 };
-const interactBtn = document.getElementById('interact');
-
-// Enable touch UI when the PRIMARY pointer is coarse (real phones/tablets) — not
-// merely when a touchscreen exists, which would wrongly show the joystick on
-// mouse-primary touch laptops. Also enable on the first real touchstart as a
-// fallback for devices that mis-report their pointer capabilities.
-function enableTouchUI() {
-  if (document.body.classList.contains('touch')) return;
-  document.body.classList.add('touch');
-  camDistDesired = 7; // start further out so the player fits a small screen
-}
-if (window.matchMedia('(pointer: coarse)').matches) enableTouchUI();
-addEventListener('touchstart', enableTouchUI, { once: true, passive: true });
-
-// --- Virtual joystick ---
-const joyEl = document.getElementById('joy');
-const joyNub = document.getElementById('joyNub');
-const JOY_R = 50; // px travel radius
-let joyId = null;
-
-function joySet(cx, cy, tx, ty) {
-  let dx = tx - cx, dy = ty - cy;
-  const d = Math.hypot(dx, dy);
-  if (d > JOY_R) { dx *= JOY_R / d; dy *= JOY_R / d; }
-  joyNub.style.transform = `translate(${dx}px, ${dy}px)`;
-  joy.x = dx / JOY_R;
-  joy.y = -dy / JOY_R; // screen up = forward
-  joy.active = true;
-}
-function joyReset() {
-  joy.active = false; joy.x = 0; joy.y = 0; joyId = null;
-  joyNub.style.transform = 'translate(0,0)';
-  joyNub.style.background = 'rgba(255,255,255,0.32)';
-}
-joyEl.addEventListener('touchstart', e => {
-  e.preventDefault();
-  if (joyId !== null) return; // first finger keeps ownership until it lifts
-  const t = e.changedTouches[0];
-  joyId = t.identifier;
-  const r = joyEl.getBoundingClientRect();
-  joySet(r.left + r.width / 2, r.top + r.height / 2, t.clientX, t.clientY);
-  joyNub.style.background = 'rgba(255,255,255,0.5)';
-}, { passive: false });
-joyEl.addEventListener('touchmove', e => {
-  e.preventDefault();
-  const r = joyEl.getBoundingClientRect();
-  for (const t of e.changedTouches) {
-    if (t.identifier === joyId) {
-      joySet(r.left + r.width / 2, r.top + r.height / 2, t.clientX, t.clientY);
-    }
-  }
-}, { passive: false });
-joyEl.addEventListener('touchend', e => {
-  for (const t of e.changedTouches) if (t.identifier === joyId) joyReset();
-}, { passive: false });
-joyEl.addEventListener('touchcancel', joyReset);
-
-// --- Interact button ---
-interactBtn.addEventListener('touchstart', e => {
-  e.preventDefault();
-  interact(interactTarget);
-}, { passive: false });
-
-// --- Drag-to-look + pinch-to-zoom on the canvas ---
-// We track ONLY touches that started on the canvas (canvasTouches). Using the
-// global e.touches here would wrongly count a finger resting on the joystick or
-// interact button, so a one-finger look + held joystick was misread as a pinch.
-const cv = renderer.domElement;
-const canvasTouches = new Map(); // identifier -> { x, y }
-let lookId = null, lookX = 0, lookY = 0;
-let pinchStartDist = 0, pinchStartCam = 0;
-
-function pinchPair() {
-  const ids = [...canvasTouches.keys()];
-  if (ids.length < 2) return null;
-  return [canvasTouches.get(ids[0]), canvasTouches.get(ids[1])];
-}
-function beginPinch() {
-  const p = pinchPair();
-  if (!p) return;
-  pinchStartDist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
-  pinchStartCam = camDistDesired;
-  lookId = null; // pinch suspends look
-}
-function beginLook(id) {
-  const t = canvasTouches.get(id);
-  if (!t) return;
-  lookId = id; lookX = t.x; lookY = t.y;
-}
-
-cv.addEventListener('touchstart', e => {
-  e.preventDefault();
-  for (const t of e.changedTouches) canvasTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
-  if (canvasTouches.size >= 2) beginPinch();
-  else if (lookId === null) beginLook(e.changedTouches[0].identifier);
-}, { passive: false });
-
-cv.addEventListener('touchmove', e => {
-  e.preventDefault();
-  for (const t of e.changedTouches) {
-    if (canvasTouches.has(t.identifier)) canvasTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
-  }
-  // Pinch: two canvas-owned fingers
-  if (canvasTouches.size >= 2 && pinchStartDist > 0) {
-    const p = pinchPair();
-    const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
-    if (d > 0) camDistDesired = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, pinchStartCam * (pinchStartDist / d)));
-    return;
-  }
-  // Look: drag the tracked look finger
-  if (lookId === null) return;
-  for (const t of e.changedTouches) {
-    if (t.identifier === lookId) {
-      camYaw -= (t.clientX - lookX) * 0.006;
-      camPitch += (t.clientY - lookY) * 0.006; // non-inverted: drag up -> look up
-      camPitch = Math.max(0.12, Math.min(1.25, camPitch));
-      lookX = t.clientX; lookY = t.clientY;
-    }
-  }
-}, { passive: false });
-
-function endCanvasTouch(e) {
-  for (const t of e.changedTouches) canvasTouches.delete(t.identifier);
-  if (canvasTouches.size < 2) {
-    pinchStartDist = 0;
-    // If a pinch (or a lifted look finger) degraded to one canvas finger,
-    // hand that finger control of look so drag-to-look resumes without a re-tap.
-    if (canvasTouches.size === 1) beginLook(canvasTouches.keys().next().value);
-    else lookId = null;
-  }
-}
-cv.addEventListener('touchend', endCanvasTouch, { passive: false });
-cv.addEventListener('touchcancel', endCanvasTouch, { passive: false });
-
-// ---------- Web Audio click ----------
-let audioCtx = null;
-function clickSound() {
-  try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const ctx = audioCtx;
-    // iOS/Safari starts (and can re-suspend) the context; resume inside the user gesture
-    if (ctx.state === 'suspended') ctx.resume();
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(900, now);
-    osc.frequency.exponentialRampToValueAtTime(180, now + 0.07);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.1);
-  } catch (e) { /* ignore */ }
-}
-
 function toggleOff(a) {
   turnOffAppliance(a);
   clickSound();
 }
-
 function toggleDoor(d) {
   d.open = !d.open;
   // Move the collider to match: blocks the doorway when closed, blocks the
@@ -394,85 +120,20 @@ function toggleDoor(d) {
   clickSound();
 }
 
-// ---------- HUD ----------
-const countEl = document.getElementById('count');
-const promptEl = document.getElementById('prompt');
-const promptTextEl = document.getElementById('promptText');
-const timerEl = document.getElementById('timer');
-const roomEl = document.getElementById('room');
-const winEl = document.getElementById('win');
-const winTimeEl = document.getElementById('winTime');
-document.getElementById('restart').addEventListener('click', () => location.reload());
-
-const gameStart = performance.now();
-let gameOver = false;
-let frozenTime = 0;
-
-function formatTime(secs) {
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function currentRoomName(pos) {
-  for (const [key, r] of Object.entries(ROOMS)) {
-    if (pos.x > r.xMin && pos.x < r.xMax && pos.z > r.zMin && pos.z < r.zMax) return r.name;
-  }
-  return 'Luar rumah';
-}
-
-// ---------- Collision ----------
-function collide(pos, radius) {
-  for (const w of colliders) {
-    if (w.active === false) continue; // open door — passable
-    const cx = Math.max(w.minX, Math.min(pos.x, w.maxX));
-    const cz = Math.max(w.minZ, Math.min(pos.z, w.maxZ));
-    const dx = pos.x - cx;
-    const dz = pos.z - cz;
-    const d2 = dx * dx + dz * dz;
-    if (d2 < radius * radius) {
-      const d = Math.sqrt(d2) || 0.0001;
-      pos.x = cx + (dx / d) * radius;
-      pos.z = cz + (dz / d) * radius;
-    }
-  }
-}
-
-// Keep the camera inside the building so it can never go through / see past a
-// wall. Clamps to the outer envelope while indoors, then pushes it out of any
-// structural wall it lands in (at wall height). Only walls — not low furniture,
-// which the camera flies safely above.
-const HOUSE_X = 15, HOUSE_Z = 12, WALL_TOP = 3.0, CAM_WALL_R = 0.3;
-function clampCameraInside(cam, p) {
-  if (p.x > -HOUSE_X && p.x < HOUSE_X && p.z > -HOUSE_Z && p.z < HOUSE_Z) {
-    const m = 0.3;
-    cam.x = Math.max(-HOUSE_X + m, Math.min(HOUSE_X - m, cam.x));
-    cam.z = Math.max(-HOUSE_Z + m, Math.min(HOUSE_Z - m, cam.z));
-    if (cam.y > 2.85) cam.y = 2.85; // stay under the ceiling (no peeking over walls)
-  }
-  if (cam.y < WALL_TOP) {
-    for (const w of walls) {
-      const cx = Math.max(w.minX, Math.min(cam.x, w.maxX));
-      const cz = Math.max(w.minZ, Math.min(cam.z, w.maxZ));
-      const dx = cam.x - cx, dz = cam.z - cz;
-      const d2 = dx * dx + dz * dz;
-      if (d2 < CAM_WALL_R * CAM_WALL_R) {
-        const d = Math.sqrt(d2) || 0.0001;
-        cam.x = cx + (dx / d) * CAM_WALL_R;
-        cam.z = cz + (dz / d) * CAM_WALL_R;
-      }
-    }
-  }
-}
+// ---------- Input ----------
+const { keys } = setupDesktopControls(renderer.domElement, cam, {
+  onInteract: () => interact(interactTarget),
+  isGameOver: () => gameOver,
+});
+const { joy } = setupTouchControls(renderer.domElement, cam, {
+  onInteract: () => interact(interactTarget),
+});
 
 // ---------- Loop ----------
 const clock = new THREE.Clock();
-const raycaster = new THREE.Raycaster();
 const tmpForward = new THREE.Vector3();
 const tmpRight = new THREE.Vector3();
 const tmpMove = new THREE.Vector3();
-const tmpDir = new THREE.Vector3();
-const tmpHead = new THREE.Vector3();
 
 let walkPhase = 0;
 
@@ -482,15 +143,14 @@ function step() {
   if (!gameOver) {
     // Arrow keys orbit the camera (desktop); same sign convention as mouse drag
     const camKey = 1.9 * dt;
-    if (keys['ArrowLeft'])  camYaw += camKey;
-    if (keys['ArrowRight']) camYaw -= camKey;
-    if (keys['ArrowUp'])    camPitch -= camKey; // non-inverted: up -> look up
-    if (keys['ArrowDown'])  camPitch += camKey;
-    camPitch = Math.max(0.12, Math.min(1.25, camPitch));
+    if (keys['ArrowLeft'])  cam.applyLook(camKey, 0);
+    if (keys['ArrowRight']) cam.applyLook(-camKey, 0);
+    if (keys['ArrowUp'])    cam.applyLook(0, -camKey); // non-inverted: up -> look up
+    if (keys['ArrowDown'])  cam.applyLook(0, camKey);
 
     // Player movement, camera-relative on XZ
-    tmpForward.set(-Math.sin(camYaw), 0, -Math.cos(camYaw));
-    tmpRight.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
+    tmpForward.set(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw));
+    tmpRight.set(Math.cos(cam.yaw), 0, -Math.sin(cam.yaw));
     tmpMove.set(0, 0, 0);
     if (joy.active) {
       // Analog joystick (mobile): forward = joy.y, strafe = joy.x. Takes
@@ -511,9 +171,9 @@ function step() {
       tmpMove.multiplyScalar(4.2 * dt);
       // Move on X, then Z, collide after each (cleaner sliding)
       player.position.x += tmpMove.x;
-      collide(player.position, PLAYER_RADIUS);
+      collide(colliders, player.position, PLAYER_RADIUS);
       player.position.z += tmpMove.z;
-      collide(player.position, PLAYER_RADIUS);
+      collide(colliders, player.position, PLAYER_RADIUS);
 
       const targetYaw = Math.atan2(tmpMove.x, tmpMove.z);
       let diff = targetYaw - player.rotation.y;
@@ -555,57 +215,31 @@ function step() {
     }
     interactTarget = nearest;
     if (nearest) {
-      promptEl.style.display = 'block';
-      promptTextEl.textContent = nearest.type === 'door'
+      hud.showPrompt(nearest.type === 'door'
         ? (nearest.open ? ' Tutup pintu' : ' Buka pintu')
-        : ` Tutup ${nearest.name}`;
-      interactBtn.classList.add('live');
+        : ` Tutup ${nearest.name}`);
     } else {
-      promptEl.style.display = 'none';
-      interactBtn.classList.remove('live');
+      hud.hidePrompt();
     }
 
     // HUD numbers
     const remaining = appliances.filter(a => a.on).length;
-    countEl.textContent = appliances.length - remaining;
+    hud.setOffCount(appliances.length - remaining);
     const elapsed = (performance.now() - gameStart) / 1000;
-    timerEl.textContent = formatTime(elapsed);
-    roomEl.textContent = currentRoomName(player.position);
-    minimap.update(player, camYaw);
+    hud.setTimer(formatTime(elapsed));
+    hud.setRoom(currentRoomName(player.position));
+    minimap.update(player, cam.yaw);
 
     if (remaining === 0) {
       gameOver = true;
-      frozenTime = elapsed;
-      winTimeEl.textContent = formatTime(elapsed);
-      winEl.style.display = 'flex';
+      hud.showWin(formatTime(elapsed));
       document.body.classList.add('gameover'); // hides #touch via CSS
       document.exitPointerLock?.();             // free the cursor for the button
     }
   }
 
-  // Camera follow with raycast occlusion
-  tmpHead.copy(player.position);
-  tmpHead.y += 1.15;
-  tmpDir.set(
-    Math.cos(camPitch) * Math.sin(camYaw),
-    Math.sin(camPitch),
-    Math.cos(camPitch) * Math.cos(camYaw),
-  );
-  let dist = camDistDesired;
-  raycaster.set(tmpHead, tmpDir);
-  raycaster.far = dist + 0.5;
-  // Occlude against walls AND roof: tilting up / backing into a wall pulls the
-  // camera in toward the player instead of clipping through (GTA/RDR2 style).
-  // Low floor + bigger buffer so it stays IN FRONT of a near wall rather than
-  // being forced past it.
-  const hits = raycaster.intersectObjects(occluders, false);
-  if (hits.length && hits[0].distance < dist) {
-    dist = Math.max(0.4, hits[0].distance - 0.3);
-  }
-  camDistCurrent += (dist - camDistCurrent) * Math.min(1, dt * 12);
-  camera.position.copy(tmpHead).addScaledVector(tmpDir, camDistCurrent);
-  clampCameraInside(camera.position, player.position); // never leave the house
-  camera.lookAt(tmpHead);
+  // Camera follow with raycast occlusion (never leaves the house)
+  cam.update(dt, player.position);
 
   renderer.render(scene, camera);
   requestAnimationFrame(step);

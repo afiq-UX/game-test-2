@@ -48,4 +48,9 @@ export const MaterialTokens = {
   ceilingWarm:    { color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 1.3, roughness: 0.4, side: 'DoubleSide' },
   ceilingCool:    { color: 0xffffff, emissive: 0xe6f0ff, emissiveIntensity: 1.3, roughness: 0.3, side: 'DoubleSide' },
   ceilingNeutral: { color: 0xfff8e0, emissive: 0xfff0c0, emissiveIntensity: 1.1, roughness: 0.4, side: 'DoubleSide' },
+
+  // --- Emissives (cove / "siling kapur" lighting) ---
+  ledStrip:       { color: 0xfff4d6, emissive: 0xffd08a, emissiveIntensity: 2.2, roughness: 0.3 },
+  plasterGlow:    { color: 0xf2ead8, emissive: 0xffe0a8, emissiveIntensity: 0.32, roughness: 0.9 },
+  downlightLens:  { color: 0xffffff, emissive: 0xfff6e6, emissiveIntensity: 2.5, roughness: 0.25 },
 };

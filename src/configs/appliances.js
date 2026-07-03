@@ -28,10 +28,26 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'lampDome' },
       { type: 'light' },
     ],
-    light: { ...L.warmCeiling, offset: [0, -0.3, 0] },
-    position: [0, 2.75, 5],
+    light: { ...L.warmCeiling, offset: [0, -0.44, 0] },
+    position: [0, 2.90, 5], // hangs from the cove light's central panel
     rotation: 0,
-    scale: 4,
+  },
+  {
+    id: 'coveLightLiv',
+    name: 'Lampu Siling Kapur (Ruang Tamu)',
+    room: 'LIV',
+    kind: 'cove-light',
+    geometry: 'coveLight',
+    size: [9.8, 13.8], // inner room dims (walls at x ±4.9, z -1.9 / 11.9)
+    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip' },
+    behaviors: [
+      { type: 'emissive', target: 'strip' },
+      { type: 'emissive', target: 'panel' },
+      { type: 'light' },
+    ],
+    light: { ...L.coveLight, offset: [0, -0.6, 0] },
+    position: [0, 2.97, 5],
+    rotation: 0,
   },
   {
     id: 'standingLamp',
@@ -44,8 +60,8 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'shade' },
       { type: 'light' },
     ],
-    light: { ...L.warmLamp, offset: [0, 1.4, 0] },
-    position: [-4.2, 0.03, 1.5],
+    light: { ...L.warmLamp, offset: [0, 1.46, 0] },
+    position: [-4.2, 0, 1.5],
     rotation: 0,
   },
   {
@@ -69,7 +85,7 @@ export const ApplianceConfigs = [
     materials: { body: 'darkGray', cone: 'blackPlastic' },
     behaviors: [],
     light: null,
-    position: [4.2, 0.4, -1.5],
+    position: [4.2, 0, -1.5],
     rotation: 0,
   },
   {
@@ -107,8 +123,8 @@ export const ApplianceConfigs = [
     materials: { body: 'darkGray', door: 'tintedGlass' },
     behaviors: [],
     light: null,
-    position: [-13.6, 1.22, 8],
-    rotation: 0,
+    position: [-13.6, 1.045, 8],
+    rotation: Math.PI / 2, // on the west counter, facing east into the kitchen
   },
   {
     id: 'riceCooker',
@@ -143,8 +159,8 @@ export const ApplianceConfigs = [
     materials: { body: 'brushedSteel', slot: 'blackPlastic' },
     behaviors: [],
     light: null,
-    position: [-13.6, 1.13, 3],
-    rotation: 0,
+    position: [-13.6, 1.045, 3],
+    rotation: Math.PI / 2, // on the west counter, facing east into the kitchen
   },
   {
     id: 'ceilingLightKit',
@@ -157,8 +173,8 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    light: { ...L.kitchenCeiling, offset: [0, -0.2, 0] },
-    position: [-10, 2.92, 5],
+    light: { ...L.kitchenCeiling, offset: [0, -0.12, 0] },
+    position: [-10, 2.96, 5],
     rotation: 0,
   },
 
@@ -187,10 +203,9 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'lampDome' },
       { type: 'light' },
     ],
-    light: { ...L.warmCeiling, offset: [0, -0.3, 0] },
-    position: [10, 2.75, 5],
+    light: { ...L.warmCeiling, offset: [0, -0.44, 0] },
+    position: [10, 2.96, 5],
     rotation: 0,
-    scale: 4,
   },
 
   // ========== BEDROOM 1 ==========
@@ -217,8 +232,8 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'shade' },
       { type: 'light' },
     ],
-    light: { ...L.warmLampSmall, offset: [0, 0.3, 0] },
-    position: [-10, 0.83, -9.5],
+    light: { ...L.warmLampSmall, offset: [0, 0.37, 0] },
+    position: [-10, 0.80, -9.5],
     rotation: 0,
   },
   {
@@ -256,8 +271,8 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    light: { ...L.bedroomCeiling, offset: [0, -0.2, 0] },
-    position: [-10, 2.92, -7],
+    light: { ...L.bedroomCeiling, offset: [0, -0.12, 0] },
+    position: [-10, 2.96, -7],
     rotation: 0,
   },
 
@@ -283,7 +298,7 @@ export const ApplianceConfigs = [
     materials: { stand: 'darkGray', frame: 'blackPlastic', screen: 'screenOnAlt' },
     behaviors: [{ type: 'emissive', target: 'screen' }],
     light: null,
-    position: [8, 1.05, -4],
+    position: [8, 1.0, -4],
     rotation: 0,
   },
   {
@@ -297,8 +312,8 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'head' },
       { type: 'light' },
     ],
-    light: { ...L.warmLampDesk, offset: [0.25, 0.3, 0] },
-    position: [7.4, 1.03, -4.2],
+    light: { ...L.warmLampDesk, offset: [0.18, 0.33, 0] },
+    position: [7.4, 1.0, -4.2],
     rotation: 0,
   },
   {
@@ -312,8 +327,8 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    light: { ...L.bedroomCeiling, offset: [0, -0.2, 0] },
-    position: [10, 2.92, -7],
+    light: { ...L.bedroomCeiling, offset: [0, -0.12, 0] },
+    position: [10, 2.96, -7],
     rotation: 0,
   },
 
@@ -353,8 +368,8 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    light: { ...L.bathCeiling, offset: [0, -0.2, 0] },
-    position: [0, 2.93, -7],
+    light: { ...L.bathCeiling, offset: [0, -0.12, 0] },
+    position: [0, 2.96, -7],
     rotation: 0,
   },
 ];

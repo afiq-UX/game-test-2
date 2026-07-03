@@ -3,6 +3,17 @@
 
 ---
 
+> ## ⚠️ SUPERSEDED — historical planning doc
+> The project was **not** built on the React / TypeScript / react-three-fiber / zustand
+> stack proposed below. It ships as **vanilla Three.js + Vite (plain JS)** with a
+> data-driven design system (tokens → systems → config → factory).
+>
+> For the actual architecture see **`DESIGN_SYSTEM.md`**, **`MIGRATION.md`**, and **`src/`**.
+> This file is retained for historical context only — do not follow its stack, folder
+> structure, or component-API sections.
+
+---
+
 ## Project Summary
 
 A browser-based 3D WebGL game set in a home environment featuring **30 electrical appliances**. The player clicks appliances to inspect them. Visual style is **realistic PBR**. Built with **react-three-fiber + drei** using a scalable design system architecture.

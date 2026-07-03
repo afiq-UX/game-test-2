@@ -1,42 +1,70 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { registerGeometry, solidMesh } from '../systems/GeometrySystem.js';
 import { getMaterial, createToggleMaterial } from '../systems/MaterialSystem.js';
-import { getModel } from '../systems/ModelLoader.js';
 
-// TV
+// TV — 75" class, wall-mounted. Origin at panel centre (config y = screen
+// centre height on the wall). Faces +Z. See design-system/00-art-style.md.
 registerGeometry('tv', (mats) => {
-  const model = getModel('tv', mats, new THREE.Vector3(1.15, -0.65, 0.08));
-  if (model) return model;
+  const frameMat = getMaterial(mats.frame ?? 'blackPlastic');
+  const standMat = getMaterial(mats.stand ?? 'darkGray');
 
-  const frame = solidMesh(new THREE.BoxGeometry(2.6, 1.5, 0.1), getMaterial(mats.frame ?? 'blackPlastic'));
-  const screenMat = createToggleMaterial(mats.screen ?? 'screenOn');
-  const screen = solidMesh(new THREE.BoxGeometry(2.4, 1.3, 0.04), screenMat);
-  screen.position.z = 0.07;
+  // Display panel with a thin uniform bezel
+  const panel = solidMesh(new RoundedBoxGeometry(1.66, 0.96, 0.04, 2, 0.008), frameMat);
+
+  // Screen inset into the front face — single named mesh for the emissive toggle
+  const screen = solidMesh(new THREE.BoxGeometry(1.60, 0.90, 0.006), createToggleMaterial(mats.screen ?? 'screenOn'));
+  screen.position.z = 0.02;
   screen.name = 'screen';
-  const stand = solidMesh(new THREE.BoxGeometry(0.6, 0.05, 0.4), getMaterial(mats.stand ?? 'darkGray'));
-  stand.position.y = -0.78;
+
+  // Electronics bulge on the back (gives the side profile some truth)
+  const back = solidMesh(new RoundedBoxGeometry(0.92, 0.56, 0.05, 2, 0.012), frameMat);
+  back.position.set(0, -0.08, -0.04);
+
+  // Bottom chin strip with a small logo chip
+  const chin = solidMesh(new THREE.BoxGeometry(1.66, 0.03, 0.012), standMat);
+  chin.position.set(0, -0.495, 0.012);
+  const logo = solidMesh(new THREE.BoxGeometry(0.10, 0.015, 0.004), getMaterial('aluminum'));
+  logo.position.set(0, -0.495, 0.021);
+
+  // Wall-mount bracket reaching back toward the wall (wall face sits ~0.15 behind)
+  const bracket = solidMesh(new THREE.BoxGeometry(0.30, 0.36, 0.10), standMat);
+  bracket.position.set(0, -0.02, -0.105);
+
   return {
-    meshes: [frame, screen, stand],
-    meta: { indicatorPos: new THREE.Vector3(1.15, -0.65, 0.08) },
+    meshes: [panel, screen, back, chin, logo, bracket],
+    meta: { indicatorPos: new THREE.Vector3(0.72, -0.46, 0.04) },
   };
 });
 
-// Computer Monitor
+// Computer Monitor — 27" desk monitor. Origin at base bottom (config y = desk
+// top). Faces +Z toward the chair. See design-system/00-art-style.md.
 registerGeometry('computerMonitor', (mats) => {
-  const model = getModel('computerMonitor', mats, new THREE.Vector3(0.36, 0.18, 0.03));
-  if (model) return model;
+  const standMat = getMaterial(mats.stand ?? 'darkGray');
+  const frameMat = getMaterial(mats.frame ?? 'blackPlastic');
 
-  const stand = solidMesh(new THREE.CylinderGeometry(0.04, 0.08, 0.25, 12), getMaterial(mats.stand ?? 'darkGray'));
-  const arm = solidMesh(new THREE.BoxGeometry(0.12, 0.02, 0.08), getMaterial(mats.stand ?? 'darkGray'));
-  arm.position.y = 0.13;
-  const panel = solidMesh(new THREE.BoxGeometry(0.9, 0.55, 0.04), getMaterial(mats.frame ?? 'blackPlastic'));
-  panel.position.y = 0.4;
-  const screenMat = createToggleMaterial(mats.screen ?? 'screenOnAlt');
-  const screen = solidMesh(new THREE.BoxGeometry(0.84, 0.49, 0.02), screenMat);
-  screen.position.set(0, 0.4, 0.025);
+  // Flat weighted base
+  const base = solidMesh(new RoundedBoxGeometry(0.24, 0.018, 0.17, 2, 0.006), standMat);
+  base.position.y = 0.009;
+
+  // Neck riser, set slightly behind the panel
+  const neck = solidMesh(new THREE.BoxGeometry(0.055, 0.30, 0.022), standMat);
+  neck.position.set(0, 0.165, -0.045);
+
+  // VESA-style attachment block between neck and panel back
+  const vesa = solidMesh(new THREE.BoxGeometry(0.11, 0.11, 0.024), frameMat);
+  vesa.position.set(0, 0.30, -0.026);
+
+  // Display panel — thin, near-borderless
+  const panel = solidMesh(new RoundedBoxGeometry(0.62, 0.37, 0.016, 2, 0.005), frameMat);
+  panel.position.set(0, 0.32, -0.008);
+
+  const screen = solidMesh(new THREE.BoxGeometry(0.596, 0.346, 0.004), createToggleMaterial(mats.screen ?? 'screenOnAlt'));
+  screen.position.set(0, 0.32, 0.001);
   screen.name = 'screen';
+
   return {
-    meshes: [stand, arm, panel, screen],
-    meta: { indicatorPos: new THREE.Vector3(0.36, 0.18, 0.03) },
+    meshes: [base, neck, vesa, panel, screen],
+    meta: { indicatorPos: new THREE.Vector3(0.27, 0.155, 0.01) },
   };
 });

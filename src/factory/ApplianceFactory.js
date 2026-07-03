@@ -13,7 +13,7 @@ const INDICATOR_MAT = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
  * @returns {object} state — { id, name, room, kind, group, indicator, light, on, behaviors }
  */
 export function createAppliance(config) {
-  const { meshes, meta } = createGeometry(config.geometry, config.materials);
+  const { meshes, meta } = createGeometry(config.geometry, config.materials, config);
 
   const group = new THREE.Group();
   const scale = config.scale ?? 1;

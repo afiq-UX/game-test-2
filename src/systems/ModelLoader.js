@@ -55,5 +55,5 @@ export function getModel(name, materialsMap, fallbackIndicatorPos) {
 
   applyMaterials(clone, materialsMap);
 
-  return { meshes: [clone], meta: { indicatorPos } };
+  return { meshes: [clone], meta: { indicatorPos, source: 'glb' } };
 }
