@@ -29,7 +29,7 @@ export function createCameraController(camera, occluders, walls) {
 
     update(dt, playerPos) {
       head.copy(playerPos);
-      head.y += 1.15;
+      head.y += 1.15; // eye level of the 1.30 m kid character
       dir.set(
         Math.cos(this.pitch) * Math.sin(this.yaw),
         Math.sin(this.pitch),

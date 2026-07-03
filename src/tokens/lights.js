@@ -12,4 +12,6 @@ export const LightTokens = {
   // Cove light fills the whole room (indirect wash): high intensity with a
   // gentle falloff so the floor and far corners read lit, not just the ceiling.
   coveLight:       { color: 0xffd9a0, intensity: 4.5, distance: 13, decay: 1.1 },
+  // Recessed soffit downlight — a tight neutral-white pool for the room corners.
+  downlight:       { color: 0xfff0dd, intensity: 2.2, distance: 6, decay: 1.4 },
 };

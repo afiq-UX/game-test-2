@@ -39,13 +39,22 @@ export const ApplianceConfigs = [
     kind: 'cove-light',
     geometry: 'coveLight',
     size: [9.8, 13.8], // inner room dims (walls at x ±4.9, z -1.9 / 11.9)
-    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip' },
+    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip', downlight: 'downlightLens' },
     behaviors: [
       { type: 'emissive', target: 'strip' },
       { type: 'emissive', target: 'panel' },
+      { type: 'emissive', target: 'downlights' },
       { type: 'light' },
     ],
     light: { ...L.coveLight, offset: [0, -0.6, 0] },
+    // Corner downlights recessed in the soffit band (x = ±(w/2 − band/2),
+    // z = ±(d/2 − band/2) for size [9.8, 13.8]); pools aimed at the corners.
+    lights: [
+      { ...L.downlight, offset: [-4.675, -0.5, -6.675] },
+      { ...L.downlight, offset: [4.675, -0.5, -6.675] },
+      { ...L.downlight, offset: [-4.675, -0.5, 6.675] },
+      { ...L.downlight, offset: [4.675, -0.5, 6.675] },
+    ],
     position: [0, 2.97, 5],
     rotation: 0,
   },

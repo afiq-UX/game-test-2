@@ -36,19 +36,22 @@ export function createAppliance(config) {
   indicator.position.copy(indPos);
   group.add(indicator);
 
-  // Point light (optional) — offset scales with the model
-  let pointLight = null;
-  if (config.light) {
-    const { color, intensity, distance, decay, offset } = config.light;
-    pointLight = new THREE.PointLight(
+  // Point lights (optional) — config.light (single) and/or config.lights
+  // (array, e.g. cove corner downlights). Offsets scale with the model.
+  const lightDefs = [];
+  if (config.light) lightDefs.push(config.light);
+  if (config.lights) lightDefs.push(...config.lights);
+  const lights = lightDefs.map(({ color, intensity, distance, decay, offset }) => {
+    const pl = new THREE.PointLight(
       color ?? 0xffeebb,
       intensity ?? 1.0,
       distance ?? 8,
       decay ?? 1.5
     );
-    if (offset) pointLight.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
-    group.add(pointLight);
-  }
+    if (offset) pl.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
+    group.add(pl);
+    return pl;
+  });
 
   // Position and rotation
   group.position.set(config.position[0], config.position[1], config.position[2]);
@@ -62,7 +65,7 @@ export function createAppliance(config) {
     kind: config.kind,
     group,
     indicator,
-    light: pointLight,
+    lights,
     on: true,
     _behaviors: [],
   };
@@ -106,11 +109,11 @@ export function tickAppliances(appliances, dt) {
 }
 
 /**
- * Turn off an appliance — hides indicator, kills light, runs behavior turnOff.
+ * Turn off an appliance — hides indicator, kills lights, runs behavior turnOff.
  */
 export function turnOffAppliance(a) {
   a.on = false;
   a.indicator.visible = false;
-  if (a.light) a.light.visible = false;
+  for (const l of a.lights) l.visible = false;
   for (const b of a._behaviors) b.turnOff(a);
 }

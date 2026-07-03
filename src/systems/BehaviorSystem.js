@@ -39,12 +39,12 @@ export const Behaviors = {
     },
   }),
 
-  // Point light visibility (light is created by factory, behavior just manages it)
+  // Point light visibility (lights are created by factory, behavior just manages them)
   light: () => ({
     setup() {},
     tick() {},
     turnOff(state) {
-      if (state.light) state.light.visible = false;
+      for (const l of state.lights) l.visible = false;
     },
   }),
 };

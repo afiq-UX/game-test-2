@@ -204,6 +204,27 @@ registerGeometry('coveLight', (mats, config) => {
   strip.name = 'strip';
   meshes.push(strip);
 
+  // Recessed downlights in the four soffit corners (see reference: small round
+  // spots in the plaster band). Aluminum trim ring per corner + one merged
+  // glowing-lens mesh so a single emissive behavior toggles all four.
+  const cornerX = w / 2 - BAND / 2;
+  const cornerZ = d / 2 - BAND / 2;
+  const lensGeos = [];
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const trim = solidMesh(new THREE.CylinderGeometry(0.055, 0.055, 0.012, 16), getMaterial('aluminum'));
+      trim.position.set(sx * cornerX, -DROP - 0.004, sz * cornerZ);
+      meshes.push(trim);
+      lensGeos.push(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.01, 16)
+          .translate(sx * cornerX, -DROP - 0.009, sz * cornerZ)
+      );
+    }
+  }
+  const downlights = solidMesh(mergeGeometries(lensGeos), createToggleMaterial(mats.downlight ?? 'downlightLens'));
+  downlights.name = 'downlights';
+  meshes.push(downlights);
+
   return {
     meshes,
     meta: { indicatorPos: new THREE.Vector3(0.4, -0.21, d / 2 - BAND / 2) },

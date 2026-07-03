@@ -29,19 +29,19 @@ export function setQualityTier(tier) {
   if (QualityTiers[tier]) currentTier = tier;
 }
 
-// Call each frame: enable nearest N point lights, disable the rest.
+// Call each frame: enable the nearest N point lights, disable the rest.
+// Appliances may own several lights (e.g. cove wash + corner downlights);
+// the budget counts individual lights, ranked by their appliance's distance.
 export function enforceLightBudget(appliances, playerPos) {
   const { maxPointLights } = getQualityConfig();
-  const withLights = [];
+  const entries = [];
   for (const a of appliances) {
-    if (a.on && a.light) withLights.push(a);
+    if (!a.on || !a.lights.length) continue;
+    const d2 = a.group.position.distanceToSquared(playerPos);
+    for (const light of a.lights) entries.push({ light, d2 });
   }
-  withLights.sort((a, b) => {
-    const da = a.group.position.distanceToSquared(playerPos);
-    const db = b.group.position.distanceToSquared(playerPos);
-    return da - db;
-  });
-  for (let i = 0; i < withLights.length; i++) {
-    withLights[i].light.visible = i < maxPointLights;
+  entries.sort((a, b) => a.d2 - b.d2);
+  for (let i = 0; i < entries.length; i++) {
+    entries[i].light.visible = i < maxPointLights;
   }
 }

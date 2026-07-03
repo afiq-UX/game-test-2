@@ -171,13 +171,16 @@ select.addEventListener('change', () => loadType(select.value));
 
 // ---------- Boot ----------
 const modelNames = [...new Set(ApplianceConfigs.map(c => c.geometry))];
-await preloadModels(modelNames);
-loadType(entries[0].geometry);
-select.value = entries[0].geometry;
 
-function step() {
-  controls.update();
-  renderer.render(scene, camera);
-  requestAnimationFrame(step);
-}
-step();
+(async () => {
+  await preloadModels(modelNames);
+  loadType(entries[0].geometry);
+  select.value = entries[0].geometry;
+
+  function step() {
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(step);
+  }
+  step();
+})();
