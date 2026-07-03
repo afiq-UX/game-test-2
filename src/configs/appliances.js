@@ -308,7 +308,7 @@ export const ApplianceConfigs = [
     behaviors: [{ type: 'emissive', target: 'screen' }],
     light: null,
     position: [8, 1.0, -4],
-    rotation: 0,
+    rotation: 135,
   },
   {
     id: 'deskLamp',
