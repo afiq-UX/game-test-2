@@ -105,8 +105,11 @@ loaderBar.style.width = '30%';
 
   function interact(target) {
     if (!target) return;
-    if (target.type === 'door') toggleDoor(target);
-    else if (target.on) toggleOff(target);
+    // Toggle only once the reach animation actually gets there, not the instant E is pressed.
+    rig.playEmote('reach', () => {
+      if (target.type === 'door') toggleDoor(target);
+      else if (target.on) toggleOff(target);
+    });
   }
   function toggleOff(a) {
     turnOffAppliance(a);
@@ -229,10 +232,13 @@ loaderBar.style.width = '30%';
 
       if (remaining === 0) {
         gameOver = true;
+        rig.playEmote('victory');
         hud.showWin(formatTime(elapsed));
         document.body.classList.add('gameover'); // hides #touch via CSS
         document.exitPointerLock?.();             // free the cursor for the button
       }
+    } else {
+      rig.update(dt, false); // keep the mixer running so the victory emote plays out
     }
 
     // Camera follow with raycast occlusion (never leaves the house)

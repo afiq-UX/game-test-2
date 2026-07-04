@@ -1,25 +1,35 @@
-// player.js — skinned, bone-rigged kid character with a real mocap walk cycle.
-// The character asset (Kid.glb) ships only Idle/sitting clips, so its native
-// Idle is kept, and a Walk cycle is grafted on by retargeting Vanguard's real
-// mocap Walk clip (Soldier.glb) onto the kid's identical Mixamo skeleton —
-// see animRetarget.js. Both are skinned meshes deformed by a bone skeleton,
-// so limbs bend and cloth/hair follow the bones instead of hinging like the
-// old rigid-parts puppet.
+// player.js — skinned, bone-rigged character (Aj.fbx) with native Mixamo
+// animation clips. Each clip (Idle, Walk, Reaching Out, Victory) was exported
+// from Mixamo for this exact rig, so tracks bind directly by bone name — no
+// retargeting involved. Only rotation tracks are kept: the clips' position
+// tracks carry root motion / hip heights in the source's own units, which
+// would fight the model's normalised scale and slide the character around.
 //
-// createPlayer() is async — it loads two GLBs — and resolves to { player, rig }:
+// createPlayer() is async — it loads the model + 4 animation FBXs — and
+// resolves to { player, rig }:
 //   player — root group; main.js drives position/rotation + collision
-//   rig    — rig.update(dt, moving) advances the mixer and blends idle↔walk
+//   rig    — rig.update(dt, moving) advances the mixer and blends idle↔walk;
+//            rig.playEmote('victory' | 'reach', onFinish) plays a one-shot
+//            emote and calls onFinish when it completes — main.js triggers
+//            'reach' on every E interaction (toggling the appliance/door
+//            only once the hand actually reaches it) and 'victory' once all
+//            appliances are off.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { retargetClip, collectBindQuaternions } from './animRetarget.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 
 export const PLAYER_RADIUS = 0.28; // kid-sized
 
-const CHARACTER_URL = '/models/char/Kid.glb';
-const MOCAP_SOURCE_URL = '/models/char/Soldier.glb'; // retarget source only, never rendered
-const TARGET_HEIGHT = 1.30;        // metres — a child, not the adult Vanguard proxy
+const CHARACTER_URL = '/models/char/Aj.fbx';
+const ANIM_URLS = {
+  idle: '/models/char/anims/Idle.fbx',
+  walk: '/models/char/anims/Walk.fbx',
+  reach: '/models/char/anims/ReachingOut.fbx',
+  victory: '/models/char/anims/Victory.fbx',
+};
+const TARGET_HEIGHT = 1.30;        // metres
 const MODEL_FORWARD_Y = 0;         // yaw so the mesh's forward aligns with local +Z
-const WALK_TIMESCALE = 1.15;       // matches the retargeted clip's stride to the 4.2 m/s glide
+const WALK_TIMESCALE = 1.15;       // matches the clip's stride to the movement glide speed
+const REACH_TIMESCALE = 2;         // the source clip reads as a slow-motion reach otherwise
 const BLEND_RATE = 9;              // idle↔walk weight blend speed (per second)
 
 export async function createPlayer() {
@@ -27,12 +37,14 @@ export async function createPlayer() {
   player.position.set(0, 0, 4);
   player.rotation.y = 0;
 
-  const loader = new GLTFLoader();
-  const [kidGltf, mocapGltf] = await Promise.all([
+  const loader = new FBXLoader();
+  const [model, idleFbx, walkFbx, reachFbx, victoryFbx] = await Promise.all([
     loader.loadAsync(CHARACTER_URL),
-    loader.loadAsync(MOCAP_SOURCE_URL),
+    loader.loadAsync(ANIM_URLS.idle),
+    loader.loadAsync(ANIM_URLS.walk),
+    loader.loadAsync(ANIM_URLS.reach),
+    loader.loadAsync(ANIM_URLS.victory),
   ]);
-  const model = kidGltf.scene;
 
   // Normalise height and drop feet to y=0.
   model.updateMatrixWorld(true);
@@ -55,38 +67,90 @@ export async function createPlayer() {
   // ---- Animation ----
   const mixer = new THREE.AnimationMixer(model);
 
-  const idleClip = kidGltf.animations.find((c) => /idle/i.test(c.name) && !/sitting/i.test(c.name));
-  const idle = idleClip ? mixer.clipAction(idleClip) : null;
-
-  // Bind (rest) pose per bone, captured before any animation has touched
-  // either skeleton — required for retargeting across two rigs whose rest
-  // poses don't match (see animRetarget.js).
-  const targetBindQuats = collectBindQuaternions(model);
-  const sourceBindQuats = collectBindQuaternions(mocapGltf.scene);
-
-  const mocapWalk = mocapGltf.animations.find((c) => c.name === 'Walk');
-  const { clip: walkClip, matched, total } = retargetClip(mocapWalk, sourceBindQuats, targetBindQuats, 'WalkRetargeted');
-  if (matched < total * 0.8) {
-    console.warn(`[player] walk retarget coverage low: ${matched}/${total} bones matched`);
+  // Pull the clip out of a Mixamo animation FBX and keep rotation tracks only.
+  function actionFrom(fbx, name) {
+    const src = fbx.animations.find((c) => c.tracks.length > 0);
+    const tracks = src.tracks.filter((t) => t.name.endsWith('.quaternion'));
+    return mixer.clipAction(new THREE.AnimationClip(name, src.duration, tracks));
   }
-  const walk = mixer.clipAction(walkClip);
+
+  const idle = actionFrom(idleFbx, 'Idle');
+  const walk = actionFrom(walkFbx, 'Walk');
+  const emotes = {
+    victory: actionFrom(victoryFbx, 'Victory'),
+    reach: actionFrom(reachFbx, 'Reach'),
+  };
   walk.timeScale = WALK_TIMESCALE;
+  emotes.reach.timeScale = REACH_TIMESCALE;
 
   for (const a of [idle, walk]) {
-    if (!a) continue;
     a.enabled = true;
     a.setEffectiveWeight(0);
     a.play();
   }
-  if (idle) idle.setEffectiveWeight(1);
+  idle.setEffectiveWeight(1);
+
+  for (const e of Object.values(emotes)) e.setLoop(THREE.LoopOnce);
+
+  // 'reach' plays back out after finishing — the hand eases back to the
+  // character's side instead of snapping straight to idle. Driven manually
+  // (action.paused + hand-set .time) rather than a second play() in reverse,
+  // since re-triggering a LoopOnce action's finish logic backwards is fiddly;
+  // scrubbing .time while paused still blends normally, it just skips the
+  // mixer's own per-frame advance so we can decrement it ourselves.
+  const PINGPONG_EMOTES = new Set(['reach']);
+
+  let activeEmote = null;
+  let activeEmoteName = null;
+  let emotePhase = null; // 'forward' | 'reverse' | null
+  let onEmoteFinish = null;
+
+  function finishEmote() {
+    activeEmote.setEffectiveWeight(0);
+    activeEmote.stop();
+    activeEmote = null;
+    activeEmoteName = null;
+    emotePhase = null;
+  }
+
+  mixer.addEventListener('finished', (ev) => {
+    if (ev.action !== activeEmote || emotePhase !== 'forward') return;
+    const cb = onEmoteFinish;
+    onEmoteFinish = null;
+    cb?.();
+    if (PINGPONG_EMOTES.has(activeEmoteName)) {
+      activeEmote.enabled = true; // LoopOnce disables itself right before this event fires
+      activeEmote.paused = true;  // we drive .time by hand from here on
+      emotePhase = 'reverse';
+    } else {
+      finishEmote();
+    }
+  });
 
   let wWalk = 0; // 0 = full idle, 1 = full walk
   const rig = {
     update(dt, moving) {
       wWalk += ((moving ? 1 : 0) - wWalk) * Math.min(1, dt * BLEND_RATE);
-      if (idle) idle.setEffectiveWeight(1 - wWalk);
-      walk.setEffectiveWeight(wWalk);
+      const locomotion = activeEmote ? 0 : 1; // emote takes over while playing
+      idle.setEffectiveWeight((1 - wWalk) * locomotion);
+      walk.setEffectiveWeight(wWalk * locomotion);
+      if (activeEmote) activeEmote.setEffectiveWeight(1);
+
+      if (emotePhase === 'reverse') {
+        activeEmote.time = Math.max(0, activeEmote.time - Math.abs(activeEmote.timeScale) * dt);
+        if (activeEmote.time <= 0) finishEmote();
+      }
+
       mixer.update(dt);
+    },
+    playEmote(name, onFinish) {
+      const a = emotes[name];
+      if (!a || activeEmote) return;
+      activeEmote = a;
+      activeEmoteName = name;
+      emotePhase = 'forward';
+      onEmoteFinish = onFinish;
+      a.reset().play();
     },
   };
 
