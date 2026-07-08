@@ -168,10 +168,11 @@ loaderBar.style.width = '30%';
       }
       const len = tmpMove.length();
       const moving = len > 0.06;
+      const running = moving && (keys['ShiftLeft'] || keys['ShiftRight']);
       if (moving) {
         // Clamp magnitude to 1 (keeps analog speed; caps diagonal keyboard input)
         if (len > 1) tmpMove.multiplyScalar(1 / len);
-        tmpMove.multiplyScalar(4.2 * dt);
+        tmpMove.multiplyScalar((running ? 5.0 : 1.5) * dt);
         // Move on X, then Z, collide after each (cleaner sliding)
         player.position.x += tmpMove.x;
         collide(colliders, player.position, PLAYER_RADIUS);
@@ -185,7 +186,7 @@ loaderBar.style.width = '30%';
         player.rotation.y += diff * Math.min(1, dt * 14);
 
       }
-      rig.update(dt, moving); // walk cycle: limb swing + bob; eases back to idle
+      rig.update(dt, moving, running); // blends idle↔walk↔run; eases back to idle
 
       // Tick appliance behaviors (spin, emissive, etc.)
       tickAppliances(appliances, dt);

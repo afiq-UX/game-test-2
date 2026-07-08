@@ -1,14 +1,16 @@
 // player.js — skinned, bone-rigged character (Aj.fbx) with native Mixamo
-// animation clips. Each clip (Idle, Walk, Reaching Out, Victory) was exported
-// from Mixamo for this exact rig, so tracks bind directly by bone name — no
-// retargeting involved. Only rotation tracks are kept: the clips' position
-// tracks carry root motion / hip heights in the source's own units, which
-// would fight the model's normalised scale and slide the character around.
+// animation clips. Each clip (Idle, Walk, Running, Reaching Out, Victory) was
+// exported from Mixamo for this exact rig, so tracks bind directly by bone
+// name — no retargeting involved. Only rotation tracks are kept: the clips'
+// position tracks carry root motion / hip heights in the source's own units,
+// which would fight the model's normalised scale and slide the character
+// around.
 //
-// createPlayer() is async — it loads the model + 4 animation FBXs — and
+// createPlayer() is async — it loads the model + 5 animation FBXs — and
 // resolves to { player, rig }:
 //   player — root group; main.js drives position/rotation + collision
-//   rig    — rig.update(dt, moving) advances the mixer and blends idle↔walk;
+//   rig    — rig.update(dt, moving, running) advances the mixer and blends
+//            idle↔walk↔run (running = Shift held while moving);
 //            rig.playEmote('victory' | 'reach', onFinish) plays a one-shot
 //            emote and calls onFinish when it completes — main.js triggers
 //            'reach' on every E interaction (toggling the appliance/door
@@ -23,6 +25,7 @@ const CHARACTER_URL = '/models/char/Aj.fbx';
 const ANIM_URLS = {
   idle: '/models/char/anims/Idle.fbx',
   walk: '/models/char/anims/Walk.fbx',
+  run: '/models/char/anims/Running.fbx',
   reach: '/models/char/anims/ReachingOut.fbx',
   victory: '/models/char/anims/Victory.fbx',
 };
@@ -38,10 +41,11 @@ export async function createPlayer() {
   player.rotation.y = 0;
 
   const loader = new FBXLoader();
-  const [model, idleFbx, walkFbx, reachFbx, victoryFbx] = await Promise.all([
+  const [model, idleFbx, walkFbx, runFbx, reachFbx, victoryFbx] = await Promise.all([
     loader.loadAsync(CHARACTER_URL),
     loader.loadAsync(ANIM_URLS.idle),
     loader.loadAsync(ANIM_URLS.walk),
+    loader.loadAsync(ANIM_URLS.run),
     loader.loadAsync(ANIM_URLS.reach),
     loader.loadAsync(ANIM_URLS.victory),
   ]);
@@ -76,6 +80,7 @@ export async function createPlayer() {
 
   const idle = actionFrom(idleFbx, 'Idle');
   const walk = actionFrom(walkFbx, 'Walk');
+  const run = actionFrom(runFbx, 'Run');
   const emotes = {
     victory: actionFrom(victoryFbx, 'Victory'),
     reach: actionFrom(reachFbx, 'Reach'),
@@ -83,7 +88,7 @@ export async function createPlayer() {
   walk.timeScale = WALK_TIMESCALE;
   emotes.reach.timeScale = REACH_TIMESCALE;
 
-  for (const a of [idle, walk]) {
+  for (const a of [idle, walk, run]) {
     a.enabled = true;
     a.setEffectiveWeight(0);
     a.play();
@@ -127,13 +132,16 @@ export async function createPlayer() {
     }
   });
 
-  let wWalk = 0; // 0 = full idle, 1 = full walk
+  let wWalk = 0; // 0 = full idle, 1 = full locomotion (walk or run)
+  let wRun = 0;  // within locomotion: 0 = walk, 1 = run
   const rig = {
-    update(dt, moving) {
+    update(dt, moving, running) {
       wWalk += ((moving ? 1 : 0) - wWalk) * Math.min(1, dt * BLEND_RATE);
+      wRun += ((running ? 1 : 0) - wRun) * Math.min(1, dt * BLEND_RATE);
       const locomotion = activeEmote ? 0 : 1; // emote takes over while playing
       idle.setEffectiveWeight((1 - wWalk) * locomotion);
-      walk.setEffectiveWeight(wWalk * locomotion);
+      walk.setEffectiveWeight(wWalk * (1 - wRun) * locomotion);
+      run.setEffectiveWeight(wWalk * wRun * locomotion);
       if (activeEmote) activeEmote.setEffectiveWeight(1);
 
       if (emotePhase === 'reverse') {
