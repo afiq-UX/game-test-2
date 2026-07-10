@@ -2,68 +2,105 @@ import * as THREE from 'three';
 
 const THICK = 0.2;
 const WALL_H = 3.0;
+const RAIL_H = 1.0; // balcony parapet height
 
-// Layout (top-down):
+// Layout (top-down, matches the floor plan; north = -Z):
 //   X: -15 .. +15   Z: -12 .. +12
-//   z = -2 splits north (bedrooms+bath) from south (kitchen+living+dining)
-//   x = -5 and x = +5 split the rows into three rooms each
 //
-//   North row (z: -12 .. -2): BR1 (-15..-5) | BATH (-5..5) | BR2 (5..15)
-//   South row (z: -2  .. 12): KIT (-15..-5) | LIV  (-5..5) | DIN (5..15)
+//   Top row:    LIVING (open, -15..-6) | BR3 (-6..-0.5) | BR2 (-0.5..5) | BALCONY (5..15)
+//   Balcony NE corner is a quarter-circle parapet (open-air, under the roof).
+//   Right side: MASTER BATH (7.5..15, z -3.5..2.5) ensuite of MASTER BEDROOM (4.5..15, z 2.5..12)
+//   Middle:     open hall; BATH 2 (-1.5..4.5, z 5.5..12)
+//   Left:       DINING (open), KITCHEN walled (-15..-7.5, z 5..12)
+//   Front door on the south wall at x -5.5..-3.5.
+
+// Balcony corner arc (quarter circle bulging toward the NE corner)
+const ARC = { cx: 10.5, cz: -7.5, r: 4.5 };
 
 export const ROOMS = {
-  BR1:  { name: 'Bilik Tidur 1', cx: -10, cz: -7,  xMin: -15, xMax: -5, zMin: -12, zMax: -2 },
-  BATH: { name: 'Bilik Air',     cx: 0,   cz: -7,  xMin: -5,  xMax: 5,  zMin: -12, zMax: -2 },
-  BR2:  { name: 'Bilik Tidur 2', cx: 10,  cz: -7,  xMin: 5,   xMax: 15, zMin: -12, zMax: -2 },
-  KIT:  { name: 'Dapur',         cx: -10, cz: 5,   xMin: -15, xMax: -5, zMin: -2,  zMax: 12 },
-  LIV:  { name: 'Ruang Tamu',    cx: 0,   cz: 5,   xMin: -5,  xMax: 5,  zMin: -2,  zMax: 12 },
-  DIN:  { name: 'Ruang Makan',   cx: 10,  cz: 5,   xMin: 5,   xMax: 15, zMin: -2,  zMax: 12 },
+  BR3:   { name: 'Bilik Tidur 3',    cx: -3.25, cz: -7.75, xMin: -6,   xMax: -0.5, zMin: -12,  zMax: -3.5 },
+  BR2:   { name: 'Bilik Tidur 2',    cx: 2.25,  cz: -7.75, xMin: -0.5, xMax: 5,    zMin: -12,  zMax: -3.5 },
+  MBATH: { name: 'Bilik Air Utama',  cx: 11.25, cz: -0.5,  xMin: 7.5,  xMax: 15,   zMin: -3.5, zMax: 2.5 },
+  MBR:   { name: 'Bilik Tidur Utama',cx: 9.75,  cz: 7.25,  xMin: 4.5,  xMax: 15,   zMin: 2.5,  zMax: 12 },
+  BATH2: { name: 'Bilik Air 2',      cx: 1.5,   cz: 8.75,  xMin: -1.5, xMax: 4.5,  zMin: 5.5,  zMax: 12 },
+  KIT:   { name: 'Dapur',            cx: -11.25,cz: 8.5,   xMin: -15,  xMax: -7.5, zMin: 5,    zMax: 12 },
+  BALC:  { name: 'Balkoni',          cx: 10,    cz: -7.75, xMin: 5,    xMax: 15,   zMin: -12,  zMax: -3.5 },
+  LIV:   { name: 'Ruang Tamu',       cx: -10.5, cz: -6,    xMin: -15,  xMax: -6,   zMin: -12,  zMax: 0 },
+  DIN:   { name: 'Ruang Makan',      cx: -10.5, cz: 2.5,   xMin: -15,  xMax: -6,   zMin: 0,    zMax: 5 },
+  // Open hall, split into non-overlapping rectangles (all one "room" to the HUD)
+  HALL1: { name: 'Ruang Legar',      cx: 0.75,  cz: -0.5,  xMin: -6,   xMax: 7.5,  zMin: -3.5, zMax: 2.5 },
+  HALL2: { name: 'Ruang Legar',      cx: -0.75, cz: 4,     xMin: -6,   xMax: 4.5,  zMin: 2.5,  zMax: 5.5 },
+  HALL3: { name: 'Ruang Legar',      cx: -3.75, cz: 8.75,  xMin: -6,   xMax: -1.5, zMin: 5.5,  zMax: 12 },
+  HALL4: { name: 'Ruang Legar',      cx: -6.75, cz: 8.5,   xMin: -7.5, xMax: -6,   zMin: 5,    zMax: 12 },
 };
 
 export function buildHouse(scene) {
   const walls = [];      // structural wall collision AABBs (also drawn on the minimap)
   const wallMeshes = []; // meshes for camera occlusion raycast
-  const furniture = [];  // furniture collision AABBs (collision only, not on the minimap)
+  const furniture = [];  // furniture collision AABBs (empty for now — furniture pass comes later)
 
   const matOuter = new THREE.MeshStandardMaterial({ color: 0xe8d5b7, roughness: 0.92 });
   const matInner = new THREE.MeshStandardMaterial({ color: 0xc4ad8b, roughness: 0.92 });
 
-  // Outer walls
-  buildWallAlongX(scene, walls, wallMeshes, matOuter, -12, -15, 15, []);                    // north
-  buildWallAlongX(scene, walls, wallMeshes, matOuter,  12, -15, 15, [[-1.2, 1.2]]);          // south w/ front door
-  buildWallAlongZ(scene, walls, wallMeshes, matOuter, -15, -12, 12, []);                    // west
-  buildWallAlongZ(scene, walls, wallMeshes, matOuter,  15, -12, 12, []);                    // east
+  // ---- Outer walls ----
+  // North: full height over the bedrooms/living, parapet across the balcony
+  buildWallAlongX(scene, walls, wallMeshes, matOuter, -12, -15, 5, []);
+  buildWallAlongX(scene, walls, wallMeshes, matOuter, -12, 5, ARC.cx, [], RAIL_H);        // balcony parapet
+  buildArcParapet(scene, walls, wallMeshes, matOuter, RAIL_H);                            // curved corner
+  // East: parapet beside the balcony, full height along master bath/bedroom
+  buildWallAlongZ(scene, walls, wallMeshes, matOuter, 15, ARC.cz, -3.5, [], RAIL_H);      // balcony parapet
+  buildWallAlongZ(scene, walls, wallMeshes, matOuter, 15, -3.5, 12, []);
+  // South (front door gap) and west
+  buildWallAlongX(scene, walls, wallMeshes, matOuter, 12, -15, 15, [[-5.5, -3.5]]);
+  buildWallAlongZ(scene, walls, wallMeshes, matOuter, -15, -12, 12, []);
 
-  // Interior horizontal divider (z = -2). Doorways to the two bedrooms only;
-  // the centre is solid so the TV (at x=0) has a wall behind it.
-  buildWallAlongX(scene, walls, wallMeshes, matInner, -2, -15, 15, [[-12, -10], [10, 12]]);
+  // ---- Interior walls ----
+  // Bedroom dividers
+  buildWallAlongZ(scene, walls, wallMeshes, matInner, -6,   -12, -3.5, []);   // living | BR3
+  buildWallAlongZ(scene, walls, wallMeshes, matInner, -0.5, -12, -3.5, []);   // BR3 | BR2
+  buildWallAlongZ(scene, walls, wallMeshes, matInner,  5,   -12, -3.5, []);   // BR2 | balcony
+  // South wall of the bedroom/balcony row: BR3 door, BR2 door, balcony door
+  buildWallAlongX(scene, walls, wallMeshes, matInner, -3.5, -6, 15, [[-4.5, -2.5], [1, 3], [5.3, 7.3]]);
+  // Master bath west wall
+  buildWallAlongZ(scene, walls, wallMeshes, matInner, 7.5, -3.5, 2.5, []);
+  // Master row divider: MBR entry (from hall) + ensuite door (from bedroom)
+  buildWallAlongX(scene, walls, wallMeshes, matInner, 2.5, 4.5, 15, [[5.2, 7.2], [10, 12]]);
+  // Master bedroom west wall (also bath 2's east wall)
+  buildWallAlongZ(scene, walls, wallMeshes, matInner, 4.5, 2.5, 12, []);
+  // Bath 2
+  buildWallAlongX(scene, walls, wallMeshes, matInner, 5.5, -1.5, 4.5, [[0.8, 2.8]]);
+  buildWallAlongZ(scene, walls, wallMeshes, matInner, -1.5, 5.5, 12, []);
+  // Kitchen (enclosed; door on the east wall facing the hall)
+  buildWallAlongX(scene, walls, wallMeshes, matInner, 5, -15, -7.5, []);
+  buildWallAlongZ(scene, walls, wallMeshes, matInner, -7.5, 5, 12, [[6, 8]]);
 
-  // Interior verticals.
-  // BR1|BATH and KIT|LIV share x=-5. Doors: BR1->BATH at z ∈ [-9,-7]; KIT->LIV at z ∈ [3,5].
-  buildWallAlongZ(scene, walls, wallMeshes, matInner, -5, -12, 12, [[-9, -7], [3, 5]]);
-  // BATH|BR2 and LIV|DIN share x=+5. Same gaps.
-  buildWallAlongZ(scene, walls, wallMeshes, matInner,  5, -12, 12, [[-9, -7], [3, 5]]);
-
-  // Per-room floors
+  // ---- Per-room floors (non-overlapping rectangles) ----
   const floors = [
-    { c: 0xb89978, ...ROOMS.BR1 },
-    { c: 0xc8c8d0, ...ROOMS.BATH }, // tile
-    { c: 0xb89978, ...ROOMS.BR2 },
-    { c: 0x7d6650, ...ROOMS.KIT },
-    { c: 0xa68b5b, ...ROOMS.LIV },
-    { c: 0x977c52, ...ROOMS.DIN },
+    { c: 0xb89978, r: ROOMS.BR3 },
+    { c: 0xb89978, r: ROOMS.BR2 },
+    { c: 0xc8c8d0, r: ROOMS.MBATH }, // tile
+    { c: 0xa98d68, r: ROOMS.MBR },
+    { c: 0xc8c8d0, r: ROOMS.BATH2 }, // tile
+    { c: 0x7d6650, r: ROOMS.KIT },
+    { c: 0xa68b5b, r: ROOMS.LIV },
+    { c: 0x977c52, r: ROOMS.DIN },
+    { c: 0x9c8760, r: ROOMS.HALL1 },
+    { c: 0x9c8760, r: ROOMS.HALL2 },
+    { c: 0x9c8760, r: ROOMS.HALL3 },
+    { c: 0x9c8760, r: ROOMS.HALL4 },
   ];
-  for (const f of floors) {
-    const w = f.xMax - f.xMin, d = f.zMax - f.zMin;
+  for (const { c, r } of floors) {
+    const w = r.xMax - r.xMin, d = r.zMax - r.zMin;
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(w, d),
-      new THREE.MeshStandardMaterial({ color: f.c, roughness: 0.95 })
+      new THREE.MeshStandardMaterial({ color: c, roughness: 0.95 })
     );
     m.rotation.x = -Math.PI / 2;
-    m.position.set((f.xMin + f.xMax) / 2, 0.01, (f.zMin + f.zMax) / 2);
+    m.position.set((r.xMin + r.xMax) / 2, 0.01, (r.zMin + r.zMax) / 2);
     m.receiveShadow = true;
     scene.add(m);
   }
+  buildBalconyFloor(scene);
 
   // Outer ground apron (in front of front door)
   const ground = new THREE.Mesh(
@@ -81,18 +118,13 @@ export function buildHouse(scene) {
     new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 1 })
   );
   mat.rotation.x = -Math.PI / 2;
-  mat.position.set(0, 0.02, 13);
+  mat.position.set(-4.5, 0.02, 13);
   scene.add(mat);
-
-  // Collect furniture footprints as collision AABBs (separate from walls so the
-  // minimap stays clean and camera occlusion is unchanged).
-  furnitureColliders = furniture;
-  buildFurniture(scene);
-  furnitureColliders = null;
 
   // Interior ceiling just under wall height: seals the top of every room so you
   // can't see over the walls into adjacent rooms — only through doorways. Casts
-  // no shadow, so moonlight still reaches the interior.
+  // no shadow, so moonlight still reaches the interior. Covers the balcony too
+  // (it reads as the roof soffit of a covered veranda).
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(30, 24),
     new THREE.MeshStandardMaterial({ color: 0xcfc7b6, roughness: 0.95, side: THREE.DoubleSide })
@@ -103,22 +135,19 @@ export function buildHouse(scene) {
   ceiling.receiveShadow = false;
   scene.add(ceiling);
 
-  const doors = buildBedroomDoors(scene);
+  const doors = buildDoors(scene);
   const roof = buildRoof(scene);
 
   return { walls, wallMeshes, furniture, roof, doors, ceiling };
 }
 
-// While set (during buildFurniture), every box() registers a collision AABB here.
-let furnitureColliders = null;
-
-function buildWallAlongX(scene, walls, wallMeshes, mat, z, xStart, xEnd, gaps) {
+function buildWallAlongX(scene, walls, wallMeshes, mat, z, xStart, xEnd, gaps, h = WALL_H) {
   for (const [s, e] of subtractGaps(xStart, xEnd, gaps)) {
     const len = e - s;
     if (len <= 0.01) continue;
-    const geo = new THREE.BoxGeometry(len, WALL_H, THICK);
+    const geo = new THREE.BoxGeometry(len, h, THICK);
     const m = new THREE.Mesh(geo, mat);
-    m.position.set((s + e) / 2, WALL_H / 2, z);
+    m.position.set((s + e) / 2, h / 2, z);
     m.castShadow = true;
     m.receiveShadow = true;
     scene.add(m);
@@ -127,19 +156,67 @@ function buildWallAlongX(scene, walls, wallMeshes, mat, z, xStart, xEnd, gaps) {
   }
 }
 
-function buildWallAlongZ(scene, walls, wallMeshes, mat, x, zStart, zEnd, gaps) {
+function buildWallAlongZ(scene, walls, wallMeshes, mat, x, zStart, zEnd, gaps, h = WALL_H) {
   for (const [s, e] of subtractGaps(zStart, zEnd, gaps)) {
     const len = e - s;
     if (len <= 0.01) continue;
-    const geo = new THREE.BoxGeometry(THICK, WALL_H, len);
+    const geo = new THREE.BoxGeometry(THICK, h, len);
     const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, WALL_H / 2, (s + e) / 2);
+    m.position.set(x, h / 2, (s + e) / 2);
     m.castShadow = true;
     m.receiveShadow = true;
     scene.add(m);
     walls.push({ minX: x - THICK / 2, maxX: x + THICK / 2, minZ: s, maxZ: e });
     wallMeshes.push(m);
   }
+}
+
+// Quarter-circle parapet on the balcony's NE corner, built from short straight
+// segments. Each segment registers its own (slightly padded) collision AABB.
+function buildArcParapet(scene, walls, wallMeshes, mat, h) {
+  const { cx, cz, r } = ARC;
+  const N = 12;
+  for (let i = 0; i < N; i++) {
+    const t0 = (i / N) * (Math.PI / 2);
+    const t1 = ((i + 1) / N) * (Math.PI / 2);
+    const x0 = cx + r * Math.sin(t0), z0 = cz - r * Math.cos(t0);
+    const x1 = cx + r * Math.sin(t1), z1 = cz - r * Math.cos(t1);
+    const dx = x1 - x0, dz = z1 - z0;
+    const len = Math.hypot(dx, dz);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(THICK, h, len + 0.06), mat);
+    m.position.set((x0 + x1) / 2, h / 2, (z0 + z1) / 2);
+    m.rotation.y = Math.atan2(dx, dz);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    scene.add(m);
+    walls.push({
+      minX: Math.min(x0, x1) - THICK / 2, maxX: Math.max(x0, x1) + THICK / 2,
+      minZ: Math.min(z0, z1) - THICK / 2, maxZ: Math.max(z0, z1) + THICK / 2,
+    });
+    wallMeshes.push(m);
+  }
+}
+
+// Balcony floor: rectangle with the NE corner rounded off along the parapet arc.
+function buildBalconyFloor(scene) {
+  const { cx, cz, r } = ARC;
+  const b = ROOMS.BALC;
+  // ShapeGeometry lies in XY; after rotation.x = -PI/2, shape y maps to world -z.
+  const shape = new THREE.Shape();
+  shape.moveTo(b.xMin, -b.zMax);          // (5, 3.5)
+  shape.lineTo(b.xMax, -b.zMax);          // (15, 3.5)
+  shape.lineTo(b.xMax, -cz);              // (15, 7.5) — arc start
+  shape.absarc(cx, -cz, r, 0, Math.PI / 2, false); // curve to (10.5, 12)
+  shape.lineTo(b.xMin, -b.zMin);          // (5, 12)
+  shape.closePath();
+  const m = new THREE.Mesh(
+    new THREE.ShapeGeometry(shape, 16),
+    new THREE.MeshStandardMaterial({ color: 0x8f8f96, roughness: 0.98 }) // concrete
+  );
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = 0.01;
+  m.receiveShadow = true;
+  scene.add(m);
 }
 
 function subtractGaps(start, end, gaps) {
@@ -154,171 +231,6 @@ function subtractGaps(start, end, gaps) {
   }
   if (cur < end) out.push([cur, end]);
   return out;
-}
-
-function box(scene, x, y, z, w, h, d, color, roughness = 0.85) {
-  const m = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshStandardMaterial({ color, roughness })
-  );
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  scene.add(m);
-  if (furnitureColliders) {
-    furnitureColliders.push({
-      minX: x - w / 2, maxX: x + w / 2,
-      minZ: z - d / 2, maxZ: z + d / 2,
-    });
-  }
-  return m;
-}
-
-function buildFurniture(scene) {
-  // ===== LIVING ROOM (LIV: x ∈ [-5,5], z ∈ [-2,12]) =====
-  // TV on north wall: TV stand
-  box(scene, 0, 0.3, -1.5, 2.6, 0.5, 0.4, 0x3e2723);
-  // Sofa, facing north
-  box(scene, 0, 0.4, 8, 3.0, 0.6, 1.2, 0x5d4037);
-  box(scene, 0, 0.85, 8.55, 3.0, 0.6, 0.2, 0x6d5047);
-  box(scene, -1.6, 0.65, 8, 0.25, 0.5, 1.2, 0x6d5047); // armrest L
-  box(scene, 1.6, 0.65, 8, 0.25, 0.5, 1.2, 0x6d5047);  // armrest R
-  // Coffee table
-  box(scene, 0, 0.32, 5.5, 1.6, 0.05, 0.8, 0x3e2723);
-  box(scene, -0.7, 0.17, 5.5, 0.08, 0.3, 0.08, 0x3e2723);
-  box(scene, 0.7, 0.17, 5.5, 0.08, 0.3, 0.08, 0x3e2723);
-  box(scene, -0.7, 0.17, 5.5 - 0.35, 0.08, 0.3, 0.08, 0x3e2723);
-  box(scene, 0.7, 0.17, 5.5 + 0.35, 0.08, 0.3, 0.08, 0x3e2723);
-  // Rug
-  const rug = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.5, 4.5),
-    new THREE.MeshStandardMaterial({ color: 0x6a3a3a, roughness: 1 })
-  );
-  rug.rotation.x = -Math.PI / 2;
-  rug.position.set(0, 0.015, 6);
-  scene.add(rug);
-
-  // ===== KITCHEN (KIT: x ∈ [-15,-5], z ∈ [-2,12]) =====
-  // Counter along west wall (x ≈ -14)
-  box(scene, -13.7, 0.5, 5, 1.6, 1.0, 8, 0xd7ccc8);
-  box(scene, -13.7, 1.02, 5, 1.7, 0.05, 8.05, 0x37474f); // counter top
-  // Sink basin (just a dark inset visual)
-  box(scene, -13.7, 1.06, 1.5, 0.9, 0.08, 0.7, 0x263238);
-  // Cabinets up top
-  box(scene, -13.9, 2.2, 5, 1.0, 0.7, 8, 0xa1887f);
-  // Kitchen island
-  box(scene, -8, 0.5, 6, 0.8, 1.0, 3, 0xefebe9);
-  box(scene, -8, 1.02, 6, 0.9, 0.05, 3.1, 0x424242);
-
-  // ===== DINING (DIN: x ∈ [5,15], z ∈ [-2,12]) =====
-  // Table
-  box(scene, 10, 0.5, 5, 2.6, 0.1, 1.4, 0x5d4037);
-  for (const [lx, lz] of [[-1.1, -0.55], [1.1, -0.55], [-1.1, 0.55], [1.1, 0.55]]) {
-    box(scene, 10 + lx, 0.25, 5 + lz, 0.12, 0.5, 0.12, 0x3e2723);
-  }
-  // Chairs
-  for (const cz of [3.4, 6.6]) {
-    box(scene, 10, 0.25, cz, 1.6, 0.5, 0.5, 0x4e342e);
-    box(scene, 10, 0.7, cz + (cz > 5 ? 0.22 : -0.22), 1.6, 0.4, 0.06, 0x4e342e);
-  }
-
-  // ===== BR1 (x ∈ [-15,-5], z ∈ [-12,-2]) =====
-  // Bed (head against west wall)
-  box(scene, -12.5, 0.3, -8, 2, 0.4, 3.2, 0x6d4c41); // frame
-  box(scene, -12.5, 0.62, -8, 2, 0.25, 3.2, 0xe8e8e8); // mattress
-  box(scene, -12.5, 0.85, -9.2, 1.6, 0.18, 0.55, 0xfafafa); // pillow
-  // Bedside table
-  box(scene, -10, 0.4, -9.5, 0.6, 0.8, 0.5, 0x3e2723);
-  // Wardrobe (east wall)
-  box(scene, -6, 1.2, -10.5, 0.6, 2.4, 1.6, 0x4e342e);
-
-  // ===== BR2 (x ∈ [5,15], z ∈ [-12,-2]) =====
-  box(scene, 12.5, 0.3, -8, 2, 0.4, 3.2, 0x6d4c41);
-  box(scene, 12.5, 0.62, -8, 2, 0.25, 3.2, 0xe8e8e8);
-  box(scene, 12.5, 0.85, -9.2, 1.6, 0.18, 0.55, 0xfafafa);
-  // Desk
-  box(scene, 8, 0.5, -4, 1.4, 1.0, 0.7, 0x4e342e);
-  // Desk chair
-  box(scene, 8, 0.25, -5, 0.5, 0.5, 0.5, 0x212121);
-  box(scene, 8, 0.7, -5.22, 0.5, 0.5, 0.06, 0x212121);
-
-  // ===== BATH (x ∈ [-5,5], z ∈ [-12,-2]) =====
-  // Bathtub
-  box(scene, -3.5, 0.3, -10, 1.4, 0.5, 1.6, 0xfafafa);
-  box(scene, -3.5, 0.4, -10, 1.2, 0.3, 1.4, 0xb0bec5); // inner inset
-  // Toilet
-  box(scene, 3.5, 0.25, -10.5, 0.5, 0.5, 0.6, 0xfafafa);
-  box(scene, 3.5, 0.65, -10.85, 0.5, 0.5, 0.1, 0xfafafa);
-  // Sink/vanity
-  box(scene, 3.5, 0.5, -4, 1.2, 1.0, 0.5, 0xfafafa);
-  // Bath mat
-  const bathmat = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.2, 0.6),
-    new THREE.MeshStandardMaterial({ color: 0x5e9aa6, roughness: 1 })
-  );
-  bathmat.rotation.x = -Math.PI / 2;
-  bathmat.position.set(0, 0.02, -7);
-  scene.add(bathmat);
-
-  buildSideTable(scene);
-}
-
-// Custom side table — mahogany style, splayed cylindrical legs, lower shelf.
-// Surface 0.65×0.50 (>2× the router's 0.30×0.22). Flush into NW corner of LIV;
-// the Wi-Fi router appliance sits on its top.
-function buildSideTable(scene) {
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x8B3A20, roughness: 0.65, metalness: 0 });
-
-  function shdMesh(geo) {
-    const m = new THREE.Mesh(geo, woodMat);
-    m.castShadow = true;
-    m.receiveShadow = true;
-    return m;
-  }
-
-  // Tabletop
-  const top = shdMesh(new THREE.BoxGeometry(0.65, 0.025, 0.50));
-  top.position.set(0, 0.5675, 0);
-
-  // Lower shelf at ~35% height
-  const shelf = shdMesh(new THREE.BoxGeometry(0.52, 0.020, 0.40));
-  shelf.position.set(0, 0.21, 0);
-
-  // Splayed cylindrical legs — bottoms extend BEYOND the tabletop edge (±0.325/±0.25)
-  // so legs visibly stick out and sit against the wall, not the tabletop surface.
-  const legDefs = [
-    { tx: -0.20, tz: -0.14, bx: -0.38, bz: -0.30 },
-    { tx:  0.20, tz: -0.14, bx:  0.38, bz: -0.30 },
-    { tx: -0.20, tz:  0.14, bx: -0.38, bz:  0.30 },
-    { tx:  0.20, tz:  0.14, bx:  0.38, bz:  0.30 },
-  ];
-  const legTopY = 0.555, legBotY = 0.01;
-
-  const legs = legDefs.map(({ tx, tz, bx, bz }) => {
-    const topV = new THREE.Vector3(tx, legTopY, tz);
-    const botV = new THREE.Vector3(bx, legBotY, bz);
-    const len = topV.distanceTo(botV);
-    const leg = shdMesh(new THREE.CylinderGeometry(0.023, 0.030, len, 10));
-    leg.position.copy(topV.clone().add(botV).multiplyScalar(0.5));
-    leg.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(tx - bx, legTopY - legBotY, tz - bz).normalize()
-    );
-    return leg;
-  });
-
-  const tableGroup = new THREE.Group();
-  tableGroup.add(top, shelf, ...legs);
-  // Back-left leg bottom (local -0.38, -0.30) embedded slightly INTO both walls so
-  // there is zero visible gap. Walls: west x=-4.9, north z=-1.9.
-  // table_x = -4.9 + 0.38 + 0.03 = -4.49,  table_z = -1.9 + 0.30 + 0.03 = -1.57
-  tableGroup.position.set(-4.49, 0, -1.57);
-  scene.add(tableGroup);
-
-  // Collision footprint (tabletop bounds) — registered like the other furniture.
-  if (furnitureColliders) {
-    furnitureColliders.push({ minX: -4.815, maxX: -4.165, minZ: -1.82, maxZ: -1.32 });
-  }
 }
 
 // ---------- Roof (gabled, ridge along X at z=0) ----------
@@ -355,19 +267,23 @@ function buildRoof(scene) {
   return g;
 }
 
-// ---------- Bedroom doors ----------
-// Hinged leaves at the bedroom doorways. They start CLOSED with a collider
-// blocking the opening; the player opens/closes them with E (handled in
-// main.js), which animates the leaf and swaps the collider between the doorway
-// (closed) and the swung-open leaf footprint (open). Returns door objects.
+// ---------- Doors ----------
+// Hinged leaves in every doorway. They start CLOSED with a collider blocking
+// the opening; the player opens/closes them with E (handled in main.js), which
+// animates the leaf and swaps the collider between the doorway (closed) and the
+// swung-open leaf footprint (open). Returns door objects.
 //   axis 'z' -> wall runs along Z at x=fixed, gap along Z from gapStart..+2
 //   axis 'x' -> wall runs along X at z=fixed, gap along X from gapStart..+2
-function buildBedroomDoors(scene) {
+function buildDoors(scene) {
   return [
-    makeDoor(scene, 'z', -5, -9, -Math.PI / 2, 'Pintu Bilik 1 (Bilik Air)'), // BR1 <-> bath
-    makeDoor(scene, 'z',  5, -9,  Math.PI / 2, 'Pintu Bilik 2 (Bilik Air)'), // BR2 <-> bath
-    makeDoor(scene, 'x', -2, -12, Math.PI / 2, 'Pintu Bilik 1 (Dapur)'),     // BR1 <-> kitchen
-    makeDoor(scene, 'x', -2,  10, Math.PI / 2, 'Pintu Bilik 2 (Makan)'),     // BR2 <-> dining
+    makeDoor(scene, 'x', -3.5, -4.5,  Math.PI / 2, 'Pintu Bilik Tidur 3'),   // hall -> BR3 (swings north)
+    makeDoor(scene, 'x', -3.5,  1,    Math.PI / 2, 'Pintu Bilik Tidur 2'),   // hall -> BR2 (swings north)
+    makeDoor(scene, 'x', -3.5,  5.3,  Math.PI / 2, 'Pintu Balkoni'),         // hall -> balcony (swings north)
+    makeDoor(scene, 'x',  2.5,  5.2, -Math.PI / 2, 'Pintu Bilik Utama'),     // hall -> master BR (swings south)
+    makeDoor(scene, 'x',  2.5,  10,   Math.PI / 2, 'Pintu Bilik Air Utama'), // master BR -> ensuite (swings north)
+    makeDoor(scene, 'x',  5.5,  0.8, -Math.PI / 2, 'Pintu Bilik Air 2'),     // hall -> bath 2 (swings south)
+    makeDoor(scene, 'z', -7.5,  6,   -Math.PI / 2, 'Pintu Dapur'),           // hall -> kitchen (swings west)
+    makeDoor(scene, 'x',  12,  -5.5,  Math.PI / 2, 'Pintu Depan'),           // outside -> hall (swings north)
   ];
 }
 function makeDoor(scene, axis, fixed, gapStart, openAngle, name) {

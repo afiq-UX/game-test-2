@@ -2,12 +2,19 @@ import { ROOMS } from './house.js';
 
 // Top-down room fill colours (muted, so the live dots pop)
 const ROOM_COLORS = {
-  BR1:  '#3a3326',
-  BATH: '#2c363d',
-  BR2:  '#3a3326',
-  KIT:  '#2a241c',
-  LIV:  '#352c20',
-  DIN:  '#2f2719',
+  BR3:   '#3a3326',
+  BR2:   '#3a3326',
+  MBATH: '#2c363d',
+  MBR:   '#3d3122',
+  BATH2: '#2c363d',
+  KIT:   '#2a241c',
+  BALC:  '#28302c',
+  LIV:   '#352c20',
+  DIN:   '#2f2719',
+  HALL1: '#322b1f',
+  HALL2: '#322b1f',
+  HALL3: '#322b1f',
+  HALL4: '#322b1f',
 };
 
 // World footprint (matches house.js layout)
@@ -75,9 +82,9 @@ export function createMinimap({ walls, appliances }) {
       ctx.fillRect(x, y, Math.max(1, sx(w.maxX) - x), Math.max(1, sy(w.maxZ) - y));
     }
 
-    // Exit (front door) marker at south wall, x=0
+    // Exit (front door) marker at south wall
     ctx.fillStyle = '#46d17a';
-    ctx.fillRect(sx(-1.2), sy(12) - 2, sx(1.2) - sx(-1.2), 3);
+    ctx.fillRect(sx(-5.5), sy(12) - 2, sx(-3.5) - sx(-5.5), 3);
 
     // Appliance dots: red+glow if still ON, dim green if OFF
     for (const a of appliances) {
