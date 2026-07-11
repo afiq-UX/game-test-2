@@ -32,7 +32,7 @@ const ANIM_URLS = {
 const TARGET_HEIGHT = 1.30;        // metres
 const MODEL_FORWARD_Y = 0;         // yaw so the mesh's forward aligns with local +Z
 const WALK_TIMESCALE = 1.15;       // matches the clip's stride to the movement glide speed
-const REACH_TIMESCALE = 2;         // the source clip reads as a slow-motion reach otherwise
+const REACH_TIMESCALE = 3;         // 1.5x the base 2x — the source clip reads as a slow-motion reach otherwise
 const BLEND_RATE = 9;              // idle↔walk weight blend speed (per second)
 
 export async function createPlayer() {
@@ -159,6 +159,9 @@ export async function createPlayer() {
       emotePhase = 'forward';
       onEmoteFinish = onFinish;
       a.reset().play();
+    },
+    isBusy() {
+      return !!activeEmote; // true while a reach/victory emote is playing (forward or reverse phase)
     },
   };
 

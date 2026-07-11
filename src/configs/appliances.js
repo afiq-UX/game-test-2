@@ -29,16 +29,26 @@ export const ApplianceConfigs = [
       { type: 'light' },
     ],
     light: { ...L.warmCeiling, offset: [0, -0.44, 0] },
-    position: [0, 2.90, 5], // hangs from the cove light's central panel
+    position: [-10.5, 2.90, -6], // hangs from the cove light's central panel
     rotation: 0,
   },
   {
     id: 'coveLightLiv',
-    name: 'Lampu Siling Kapur (Ruang Tamu)',
+    name: 'Lampu Siling Kapur (Ruang Tamu & Makan)',
     room: 'LIV',
     kind: 'cove-light',
     geometry: 'coveLight',
-    size: [9.8, 13.8], // inner room dims (walls at x ±4.9, z -1.9 / 11.9)
+    // LIV + DIN + the open hall (HALL1-4) are all one unwalled floor — a
+    // staircase-shaped open-plan area, not a rectangle (it steps in around
+    // the Master Bath, Master Bedroom, and Bath2 walls). `shape` traces the
+    // wall-face polygon in world XZ (position is [0,y,0] so local == world
+    // here); the coveLight geometry insets/extrudes this outline itself and
+    // drops a downlight at every one of its 12 corners.
+    shape: [
+      [-14.9, -11.9], [-6.1, -11.9], [-6.1, -3.4], [7.4, -3.4],
+      [7.4, 2.4], [4.4, 2.4], [4.4, 5.4], [-1.6, 5.4],
+      [-1.6, 11.9], [-7.4, 11.9], [-7.4, 4.9], [-14.9, 4.9],
+    ],
     materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip', downlight: 'downlightLens' },
     behaviors: [
       { type: 'emissive', target: 'strip' },
@@ -46,16 +56,30 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'downlights' },
       { type: 'light' },
     ],
-    light: { ...L.coveLight, offset: [0, -0.6, 0] },
-    // Corner downlights recessed in the soffit band (x = ±(w/2 − band/2),
-    // z = ±(d/2 − band/2) for size [9.8, 13.8]); pools aimed at the corners.
+    light: null,
     lights: [
-      { ...L.downlight, offset: [-4.675, -0.5, -6.675] },
-      { ...L.downlight, offset: [4.675, -0.5, -6.675] },
-      { ...L.downlight, offset: [-4.675, -0.5, 6.675] },
-      { ...L.downlight, offset: [4.675, -0.5, 6.675] },
+      // Broad warm wash lights spread across the span (one light's 13-unit
+      // reach doesn't cover this whole shape) — the light budget system
+      // enables whichever are nearest the player at runtime.
+      { ...L.coveLight, offset: [-10.5, -0.6, -6] },   // over Living
+      { ...L.coveLight, offset: [-10.5, -0.6, 2.5] },  // over Dining
+      { ...L.coveLight, offset: [0, -0.6, 0] },        // over Hall1
+      { ...L.coveLight, offset: [-3.5, -0.6, 8] },     // over Hall3/Hall4, by the kitchen doorway
+      // Corner downlights, one per polygon vertex above.
+      { ...L.downlight, offset: [-14.675, -0.5, -11.675] },
+      { ...L.downlight, offset: [-6.325, -0.5, -11.675] },
+      { ...L.downlight, offset: [-6.325, -0.5, -3.175] },
+      { ...L.downlight, offset: [7.175, -0.5, -3.175] },
+      { ...L.downlight, offset: [7.175, -0.5, 2.175] },
+      { ...L.downlight, offset: [4.175, -0.5, 2.175] },
+      { ...L.downlight, offset: [4.175, -0.5, 5.175] },
+      { ...L.downlight, offset: [-1.825, -0.5, 5.175] },
+      { ...L.downlight, offset: [-1.825, -0.5, 11.675] },
+      { ...L.downlight, offset: [-7.175, -0.5, 11.675] },
+      { ...L.downlight, offset: [-7.175, -0.5, 4.675] },
+      { ...L.downlight, offset: [-14.675, -0.5, 4.675] },
     ],
-    position: [0, 2.97, 5],
+    position: [0, 2.97, 0],
     rotation: 0,
   },
   {
@@ -120,8 +144,11 @@ export const ApplianceConfigs = [
     materials: { body: 'offWhite', seam: 'lightGray', handle: 'grayPlastic' },
     behaviors: [],
     light: null,
-    position: [-6.5, 0, 0.8],
-    rotation: 0,
+    // Old position was a leftover from the previous floor plan, well outside
+    // the current kitchen (KIT: x -15..-7.5, z 5..12) — moved into the SW
+    // corner, back to the west wall, facing east into the room.
+    position: [-14.55, 0, 10.5],
+    rotation: Math.PI / 2,
   },
   {
     id: 'microwave',
@@ -132,8 +159,15 @@ export const ApplianceConfigs = [
     materials: { body: 'darkGray', door: 'tintedGlass' },
     behaviors: [],
     light: null,
-    position: [-13.6, 1.045, 8],
-    rotation: Math.PI / 2, // on the west counter, facing east into the kitchen
+    // Moved onto the cabinet's return-leg counter (past the corner post),
+    // per screenshot feedback. Also fixes the floating gap: the previous
+    // y used the trim strip found at local y 34.4-39.1 as the counter
+    // surface, but that trim actually rides ON TOP of the true counter
+    // plane — the base cabinet carcass (mesh32) tops out at local y=35.0
+    // raw (0.889m), which is the real surface. Rotation is a guess (this
+    // run faces a different way than the main run); check once visible.
+    position: [-8.8601, 0.934, 11.6958],
+    rotation: 0,
   },
   {
     id: 'riceCooker',
@@ -144,7 +178,7 @@ export const ApplianceConfigs = [
     materials: { body: 'whitePlastic', lid: 'aluminum' },
     behaviors: [],
     light: null,
-    position: [-13.6, 1.16, 6],
+    position: [-7.9229, 1.049, 8.1678],
     rotation: 0,
   },
   {
@@ -156,7 +190,7 @@ export const ApplianceConfigs = [
     materials: { body: 'stainless', spout: 'darkGray', handle: 'darkGray' },
     behaviors: [],
     light: null,
-    position: [-13.6, 1.15, 4.4],
+    position: [-7.9229, 1.039, 8.5488],
     rotation: 0,
   },
   {
@@ -168,8 +202,11 @@ export const ApplianceConfigs = [
     materials: { body: 'brushedSteel', slot: 'blackPlastic' },
     behaviors: [],
     light: null,
-    position: [-13.6, 1.045, 3],
-    rotation: Math.PI / 2, // on the west counter, facing east into the kitchen
+    // On the pass-through counter itself (see house.js buildKitchenCounter:
+    // cx=-11.25, z=5, top at baseH+topH=1.05), on the kitchen side (z > 5) —
+    // the other appliances moved to the cabinet's countertop instead.
+    position: [-12.5, 1.095, 5.3],
+    rotation: 0,
   },
   {
     id: 'ceilingLightKit',
@@ -213,7 +250,7 @@ export const ApplianceConfigs = [
       { type: 'light' },
     ],
     light: { ...L.warmCeiling, offset: [0, -0.44, 0] },
-    position: [10, 2.96, 5],
+    position: [-10.5, 2.96, 2.5], // centered over the dining table zone (old DIN rect, z 0..5)
     rotation: 0,
   },
 

@@ -26,6 +26,16 @@ export function createHud() {
   const interactBtn = document.getElementById('interact');
   document.getElementById('restart').addEventListener('click', () => location.reload());
 
+  // Credits modal — reachable from the HUD link (start of the game) and from
+  // a second button on the win screen (end of the game); both open the same panel.
+  const creditsModal = document.getElementById('creditsModal');
+  const openCredits = () => creditsModal.classList.add('open');
+  const closeCredits = () => creditsModal.classList.remove('open');
+  document.getElementById('creditsLink').addEventListener('click', openCredits);
+  document.getElementById('creditsBtnWin').addEventListener('click', openCredits);
+  document.getElementById('creditsClose').addEventListener('click', closeCredits);
+  creditsModal.addEventListener('click', (e) => { if (e.target === creditsModal) closeCredits(); });
+
   return {
     setTotal(n) { totalEl.textContent = n; },
     setOffCount(n) { countEl.textContent = n; },

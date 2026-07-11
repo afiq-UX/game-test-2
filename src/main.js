@@ -6,6 +6,7 @@ import { ApplianceConfigs } from './configs/appliances.js';
 import { createAllAppliances, tickAppliances, turnOffAppliance } from './factory/ApplianceFactory.js';
 import { detectQuality, getQualityConfig, enforceLightBudget } from './systems/QualitySystem.js';
 import { preloadModels } from './systems/ModelLoader.js';
+import { preloadCafeStool, getCafeStoolTemplate, preloadKitchenCabinets, getKitchenCabinets, getFridgeNookWorldPos, preloadKitchenCounter, getKitchenCounter, preloadDiningTableSet, getDiningTableSet, preloadCupboard, getCupboard } from './systems/PropLoader.js';
 import { createPlayer, PLAYER_RADIUS } from './player.js';
 import { createCameraController } from './cameraController.js';
 import { collide } from './collision.js';
@@ -54,7 +55,7 @@ moon.shadow.bias = -0.0005;
 scene.add(moon);
 
 // ---------- House ----------
-const { walls, wallMeshes, furniture, roof, doors, ceiling } = buildHouse(scene);
+const { walls, wallMeshes, furniture, roof, doors, ceiling, stoolSpots } = buildHouse(scene);
 const colliders = walls.concat(furniture); // walls + furniture for player collision
 for (const d of doors) colliders.push(d.collider); // door AABBs (active only when closed)
 
@@ -71,13 +72,118 @@ const loaderBar = document.getElementById('loader-bar');
 const modelNames = [...new Set(ApplianceConfigs.map(c => c.geometry))];
 loaderBar.style.width = '30%';
 
+// Ceiling-mounted fixtures (fans, ceiling lights, cove lighting) sit well
+// above head height — the player walks under them, so they're excluded from
+// floor collision. Everything else (screens, lamps, gadgets, big appliances)
+// sits at a height a walking player would actually bump into.
+const CEILING_KINDS = new Set(['fan-light', 'ceiling-light', 'cove-light']);
+
+// Add a floor collider spanning an object's actual XZ footprint (computed
+// from its real geometry rather than hand-guessed dimensions).
+function addBoxCollider(object3D) {
+  object3D.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(object3D);
+  colliders.push({ minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z });
+}
+
 (async () => {
-  await preloadModels(modelNames);
+  await Promise.all([preloadModels(modelNames), preloadCafeStool(), preloadKitchenCabinets(), preloadKitchenCounter(), preloadDiningTableSet(), preloadCupboard()]);
   loaderBar.style.width = '100%';
   loaderEl.classList.add('hidden');
 
   // ---------- Appliances ----------
   const appliances = createAllAppliances(scene, ApplianceConfigs);
+  for (const a of appliances) {
+    if (CEILING_KINDS.has(a.kind)) continue;
+    addBoxCollider(a.group);
+  }
+
+  // ---------- Kitchen counter stools ----------
+  for (const [sx, sz] of stoolSpots) {
+    const stool = getCafeStoolTemplate();
+    if (!stool) continue;
+    stool.position.x = sx;
+    stool.position.z = sz;
+    scene.add(stool);
+    addBoxCollider(stool);
+  }
+
+  // ---------- Kitchen cabinets ----------
+  const cabinets = getKitchenCabinets();
+  if (cabinets) {
+    // Best-effort orientation: turns the model's long run to hug the west
+    // wall, with its return leg sweeping along the south wall — check this
+    // once it's visible, the rotation direction is a guess. Flipped 180°
+    // per feedback once it was visible.
+    cabinets.rotation.y = Math.PI / 2 + Math.PI;
+    cabinets.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(cabinets);
+    // Snap flush into the kitchen's SW corner (west wall inner face ≈ x -14.9,
+    // south wall inner face ≈ z 11.9 — see house.js ROOMS.KIT / wall thickness).
+    cabinets.position.x += -13.67 - box.min.x;
+    cabinets.position.z += 14.5 - box.max.z;
+    // The SW-corner anchor left the assembly short of the room's footprint
+    // (7.5×7m room, 4.5×4m cabinet run), leaving an empty gap toward the
+    // doorway/east side where the player was standing — shift it NE to close
+    // that gap. Adjust further if it still doesn't reach.
+    cabinets.position.x += 2.0;
+    cabinets.position.z -= 2.5;
+    cabinets.updateMatrixWorld(true);
+    scene.add(cabinets);
+    addBoxCollider(cabinets);
+
+    // Move the fridge into the cabinet's built-in nook (see PropLoader.js —
+    // the nook position is a geometric estimate, not a precise measurement).
+    const nook = getFridgeNookWorldPos();
+    const fridgeAppliance = appliances.find(a => a.id === 'fridge');
+    if (nook && fridgeAppliance) fridgeAppliance.group.position.set(nook.x, 0, nook.z);
+  }
+
+  // ---------- Kitchen Counter (opposite wall from the kitchen cabinets,
+  // which hug the east/south side near the doorway — this hugs west/north).
+  // Replaces the earlier Counter-Corner asset in the same slot, same placement. ----------
+  const kitchenCounter = getKitchenCounter();
+  if (kitchenCounter) {
+    // Scaled up 5x, then down 2x (net 2.5x) per feedback — the MM unit guess
+    // in PropLoader.js likely read too small.
+    kitchenCounter.scale.multiplyScalar(2.5);
+    // Best-effort orientation, carried over from the Counter-Corner asset it
+    // replaced — check once visible, this model's own natural facing may
+    // not match. Turned another 270° per feedback.
+    kitchenCounter.rotation.y = Math.PI / 2 + Math.PI + Math.PI + Math.PI / 2 + Math.PI / 2 + (Math.PI * 3) / 2;
+    kitchenCounter.updateMatrixWorld(true);
+    const kcBox = new THREE.Box3().setFromObject(kitchenCounter);
+    // West wall inner face ≈ x -14.9. North edge starts at z 5.5, just past
+    // the pass-through counter's kitchen-side reach (z 5..5.45), so it
+    // doesn't clip through that.
+    kitchenCounter.position.x += -14.8 - kcBox.min.x;
+    kitchenCounter.position.z += 11.3 - kcBox.min.z;
+    kitchenCounter.updateMatrixWorld(true);
+    scene.add(kitchenCounter);
+    addBoxCollider(kitchenCounter);
+  }
+
+  // ---------- Dining table set, centered in the dining area (ROOMS.DIN:
+  // cx=-10.5, cz=2.5 — see house.js) ----------
+  const diningTableSet = getDiningTableSet();
+  if (diningTableSet) {
+    diningTableSet.position.x += -11.1;
+    diningTableSet.position.z += 0.5;
+    scene.add(diningTableSet);
+    addBoxCollider(diningTableSet);
+  }
+
+  // ---------- Cupboard — against the kitchen's north wall (solid segment at
+  // x -15..-13.125, west of the pass-through gap), by the counter's left end
+  // where the overhang used to be. Best-effort spot per feedback — check
+  // once visible. ----------
+  const cupboard = getCupboard();
+  if (cupboard) {
+    cupboard.position.x = -14;
+    cupboard.position.z = 6;
+    scene.add(cupboard);
+    addBoxCollider(cupboard);
+  }
 
   // Appliance meshes flagged as camera occluders (e.g. the cove-light soffit,
   // which sits right at the camera's indoor height clamp) join the walls/roof/
@@ -155,12 +261,15 @@ loaderBar.style.width = '30%';
       tmpForward.set(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw));
       tmpRight.set(Math.cos(cam.yaw), 0, -Math.sin(cam.yaw));
       tmpMove.set(0, 0, 0);
-      if (joy.active) {
+      // While the reach (E-interact) emote is playing, freeze walk/run entirely
+      // so the character stands still and commits to the door/appliance action
+      // instead of sliding across the floor mid-reach.
+      if (!rig.isBusy() && joy.active) {
         // Analog joystick (mobile): forward = joy.y, strafe = joy.x. Takes
         // precedence over keys so the two inputs never fight on hybrid devices.
         tmpMove.addScaledVector(tmpForward, joy.y);
         tmpMove.addScaledVector(tmpRight, joy.x);
-      } else {
+      } else if (!rig.isBusy()) {
         if (keys['KeyW']) tmpMove.add(tmpForward);
         if (keys['KeyS']) tmpMove.sub(tmpForward);
         if (keys['KeyD']) tmpMove.add(tmpRight);

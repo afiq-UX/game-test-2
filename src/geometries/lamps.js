@@ -147,88 +147,200 @@ registerGeometry('deskLamp', (mats) => {
   };
 });
 
+// Inset an axis-aligned (rectilinear) polygon inward by `margin`. Every edge
+// is either horizontal or vertical, so at each vertex exactly one adjacent
+// edge shifts its x and the other shifts its z — this walks the perimeter
+// once and works for any orthogonal outline (convex rect or a staircase of
+// notches), which is what lets one cove-light span an irregular open-plan
+// room shape instead of just a rectangle.
+function insetRectPolygon(pts, margin) {
+  const n = pts.length;
+  const normalOf = (a, b) => {
+    const dx = b[0] - a[0], dz = b[1] - a[1];
+    const len = Math.hypot(dx, dz);
+    return [-dz / len, dx / len]; // edge direction rotated +90°, points inward
+  };
+  return pts.map((cur, i) => {
+    const prev = pts[(i - 1 + n) % n];
+    const next = pts[(i + 1) % n];
+    const nPrev = normalOf(prev, cur);
+    const nNext = normalOf(cur, next);
+    const [dx, dz] = Math.abs(nPrev[0]) > 0.5
+      ? [nPrev[0] * margin, nNext[1] * margin]
+      : [nNext[0] * margin, nPrev[1] * margin];
+    return [cur[0] + dx, cur[1] + dz];
+  });
+}
+
+// Build a flat (x,z) THREE.Shape, optionally with a hole, from point rings.
+// THREE.Shape requires a hole's winding to run opposite the outer contour (or
+// the earcut triangulator misreads it, leaving stray/missing faces) — since
+// `innerPts` here is always an inward inset of the same ring (same winding as
+// the outer), it's reversed before building the hole path.
+function ringShape(outerPts, innerPts) {
+  const shape = new THREE.Shape();
+  outerPts.forEach(([x, z], i) => (i === 0 ? shape.moveTo(x, -z) : shape.lineTo(x, -z)));
+  shape.closePath();
+  if (innerPts) {
+    const hole = new THREE.Path();
+    const rev = [...innerPts].reverse();
+    rev.forEach(([x, z], i) => (i === 0 ? hole.moveTo(x, -z) : hole.lineTo(x, -z)));
+    hole.closePath();
+    shape.holes.push(hole);
+  }
+  return shape;
+}
+
+// Extrude a flat (x,z) shape into a solid of the given height, then lay it
+// flat so the shape's plane becomes the XZ plane and the extrusion becomes Y.
+// Beveled by default (small radius) so the drop's edges read as soft plaster
+// coving rather than a hard 90° cut, like the reference tray ceiling.
+function extrudeFlat(shape, height, { bevel = true } = {}) {
+  const bevelSize = Math.min(0.02, height / 2);
+  const geo = new THREE.ExtrudeGeometry(shape, bevel
+    ? { depth: height - bevelSize, bevelEnabled: true, bevelThickness: bevelSize, bevelSize, bevelSegments: 3 }
+    : { depth: height, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2);
+  // MeshStandardMaterial defaults to FrontSide; a custom extruded ring's face
+  // winding after the rotateX above isn't guaranteed to face the room's
+  // interior (unlike an authored BoxGeometry), so callers set the material to
+  // DoubleSide to avoid faces disappearing ("transparent ceiling") from below.
+  return geo;
+}
+
 // Cove Light ("siling kapur") — Malaysian plaster-ceiling cove lighting: a
 // perimeter soffit band dropped below the ceiling with a hidden warm LED strip
 // washing a raised central panel (see reference: recessed tray + warm rim glow).
-// Sized per room via config.size = [innerWidth, innerDepth]. Origin at the
-// ceiling-plane centre of the room, hangs downward.
+// Origin at the ceiling-plane centre of the room, hangs downward. Two ways to
+// size it:
+//   config.size  = [innerWidth, innerDepth] — simple rectangular room.
+//   config.shape = [[x,z], ...]             — wall-face polygon (world XZ,
+//     rectilinear/orthogonal only) for an open-plan room that isn't a plain
+//     rectangle; a downlight is placed at every vertex.
 registerGeometry('coveLight', (mats, config) => {
-  const [w, d] = config?.size ?? [6, 6];
   const BAND = 0.45;      // soffit band width in from each wall
   const PANEL_Y = -0.06;  // central panel level below the structural ceiling
   const DROP = 0.20;      // soffit underside below the structural ceiling
-  const ow = w / 2 - BAND; // central opening half-width
-  const od = d / 2 - BAND; // central opening half-depth
+  const soffitH = DROP + PANEL_Y; // vertical extent -DROP..PANEL_Y → 0.14
 
-  const trayMat = getMaterial(mats.tray ?? 'whitePlastic');
+  // DoubleSide: the extruded polygon ring's face winding isn't guaranteed to
+  // face the room interior (unlike an authored BoxGeometry), so without this
+  // some faces disappear from below — the "transparent ceiling" bug.
+  const trayMat = getMaterial(mats.tray ?? 'whitePlastic', { side: 'DoubleSide' });
+  const panelMat = createToggleMaterial(mats.panel ?? 'plasterGlow', { side: 'DoubleSide' });
+  const stripMat = createToggleMaterial(mats.strip ?? 'ledStrip', { side: 'DoubleSide' });
+  const downlightMat = createToggleMaterial(mats.downlight ?? 'downlightLens');
   const meshes = [];
+  let indicatorPos;
 
-  // Perimeter soffit: four slabs from PANEL_Y down to DROP. Flagged as camera
-  // occluders — the follow camera's indoor height clamp sits inside this band,
-  // so main.js adds these to the occlusion set to keep the camera out of them.
-  const soffitH = DROP + PANEL_Y;       // vertical extent -DROP..PANEL_Y → 0.14
-  const soffitCY = (PANEL_Y - DROP) / 2; // its midpoint: -0.13
-  const soffitDefs = [
-    { geo: new THREE.BoxGeometry(w, soffitH, BAND), x: 0, z: -(d / 2 - BAND / 2) }, // north
-    { geo: new THREE.BoxGeometry(w, soffitH, BAND), x: 0, z: d / 2 - BAND / 2 },    // south
-    { geo: new THREE.BoxGeometry(BAND, soffitH, d - 2 * BAND), x: -(w / 2 - BAND / 2), z: 0 }, // west
-    { geo: new THREE.BoxGeometry(BAND, soffitH, d - 2 * BAND), x: w / 2 - BAND / 2, z: 0 },    // east
-  ];
-  for (const s of soffitDefs) {
-    const m = solidMesh(s.geo, trayMat);
-    m.position.set(s.x, soffitCY, s.z);
-    m.userData.occludeCamera = true;
-    meshes.push(m);
-  }
+  if (config?.shape) {
+    const wallFace = config.shape;
+    const opening = insetRectPolygon(wallFace, BAND);
+    const panelRing = insetRectPolygon(wallFace, BAND - 0.05);   // +0.1 overlap hides the seam
+    const stripOuter = insetRectPolygon(wallFace, BAND - 0.02);
+    const stripInner = insetRectPolygon(wallFace, BAND + 0.03);  // ~0.05-wide glow ring
+    const corners = insetRectPolygon(wallFace, BAND / 2);        // downlight position per vertex
 
-  // Raised central panel spanning the opening (slight overlap hides the seam).
-  // Faintly emissive so it reads as washed by the cove light; toggles off with it.
-  const panel = solidMesh(
-    new THREE.BoxGeometry(2 * ow + 0.1, 0.02, 2 * od + 0.1),
-    createToggleMaterial(mats.panel ?? 'plasterGlow')
-  );
-  panel.position.y = PANEL_Y;
-  panel.name = 'panel';
-  meshes.push(panel);
+    // Perimeter soffit ring (wallFace outer, opening as a hole), dropped below
+    // the structural ceiling. Flagged as a camera occluder like the box path.
+    const soffit = solidMesh(extrudeFlat(ringShape(wallFace, opening), soffitH), trayMat);
+    soffit.position.y = -DROP;
+    soffit.userData.occludeCamera = true;
+    meshes.push(soffit);
 
-  // Hidden LED strip: one merged rim hugging the soffit inner faces just under
-  // the panel — reads as the bright cove line from below.
-  const stripY = -0.088;
-  const stripGeos = [
-    new THREE.BoxGeometry(2 * ow - 0.1, 0.035, 0.05).translate(0, stripY, -(od - 0.045)), // north
-    new THREE.BoxGeometry(2 * ow - 0.1, 0.035, 0.05).translate(0, stripY, od - 0.045),    // south
-    new THREE.BoxGeometry(0.05, 0.035, 2 * od - 0.1).translate(-(ow - 0.045), stripY, 0), // west
-    new THREE.BoxGeometry(0.05, 0.035, 2 * od - 0.1).translate(ow - 0.045, stripY, 0),    // east
-  ];
-  const strip = solidMesh(mergeGeometries(stripGeos), createToggleMaterial(mats.strip ?? 'ledStrip'));
-  strip.name = 'strip';
-  meshes.push(strip);
+    // Raised central panel spanning the opening.
+    const panel = solidMesh(extrudeFlat(ringShape(panelRing), 0.02), panelMat);
+    panel.position.y = PANEL_Y - 0.02;
+    panel.name = 'panel';
+    meshes.push(panel);
 
-  // Recessed downlights in the four soffit corners (see reference: small round
-  // spots in the plaster band). Aluminum trim ring per corner + one merged
-  // glowing-lens mesh so a single emissive behavior toggles all four.
-  const cornerX = w / 2 - BAND / 2;
-  const cornerZ = d / 2 - BAND / 2;
-  const lensGeos = [];
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
+    // Hidden LED strip hugging the opening's inner edge — kept crisp (no
+    // bevel) so the bright line doesn't blur into a bulge.
+    const strip = solidMesh(extrudeFlat(ringShape(stripOuter, stripInner), 0.035, { bevel: false }), stripMat);
+    strip.position.y = -0.088 - 0.0175;
+    strip.name = 'strip';
+    meshes.push(strip);
+
+    // Recessed downlight at every corner of the perimeter (see reference:
+    // small round spots in the plaster band).
+    const lensGeos = [];
+    for (const [cx, cz] of corners) {
       const trim = solidMesh(new THREE.CylinderGeometry(0.055, 0.055, 0.012, 16), getMaterial('aluminum'));
-      trim.position.set(sx * cornerX, -DROP - 0.004, sz * cornerZ);
+      trim.position.set(cx, -DROP - 0.004, cz);
       meshes.push(trim);
-      lensGeos.push(
-        new THREE.CylinderGeometry(0.04, 0.04, 0.01, 16)
-          .translate(sx * cornerX, -DROP - 0.009, sz * cornerZ)
-      );
+      lensGeos.push(new THREE.CylinderGeometry(0.04, 0.04, 0.01, 16).translate(cx, -DROP - 0.009, cz));
     }
-  }
-  const downlights = solidMesh(mergeGeometries(lensGeos), createToggleMaterial(mats.downlight ?? 'downlightLens'));
-  downlights.name = 'downlights';
-  meshes.push(downlights);
+    const downlights = solidMesh(mergeGeometries(lensGeos), downlightMat);
+    downlights.name = 'downlights';
+    meshes.push(downlights);
 
-  return {
-    meshes,
-    meta: { indicatorPos: new THREE.Vector3(0.4, -0.21, d / 2 - BAND / 2) },
-  };
+    indicatorPos = new THREE.Vector3(corners[0][0] + 0.4, -0.21, corners[0][1] + 0.3);
+  } else {
+    const [w, d] = config?.size ?? [6, 6];
+    const ow = w / 2 - BAND; // central opening half-width
+    const od = d / 2 - BAND; // central opening half-depth
+
+    // Perimeter soffit: four slabs from PANEL_Y down to DROP. Flagged as camera
+    // occluders — the follow camera's indoor height clamp sits inside this band,
+    // so main.js adds these to the occlusion set to keep the camera out of them.
+    const soffitCY = (PANEL_Y - DROP) / 2; // its midpoint: -0.13
+    const soffitDefs = [
+      { geo: new THREE.BoxGeometry(w, soffitH, BAND), x: 0, z: -(d / 2 - BAND / 2) }, // north
+      { geo: new THREE.BoxGeometry(w, soffitH, BAND), x: 0, z: d / 2 - BAND / 2 },    // south
+      { geo: new THREE.BoxGeometry(BAND, soffitH, d - 2 * BAND), x: -(w / 2 - BAND / 2), z: 0 }, // west
+      { geo: new THREE.BoxGeometry(BAND, soffitH, d - 2 * BAND), x: w / 2 - BAND / 2, z: 0 },    // east
+    ];
+    for (const s of soffitDefs) {
+      const m = solidMesh(s.geo, trayMat);
+      m.position.set(s.x, soffitCY, s.z);
+      m.userData.occludeCamera = true;
+      meshes.push(m);
+    }
+
+    // Raised central panel spanning the opening (slight overlap hides the seam).
+    const panel = solidMesh(new THREE.BoxGeometry(2 * ow + 0.1, 0.02, 2 * od + 0.1), panelMat);
+    panel.position.y = PANEL_Y;
+    panel.name = 'panel';
+    meshes.push(panel);
+
+    // Hidden LED strip: one merged rim hugging the soffit inner faces just under
+    // the panel — reads as the bright cove line from below.
+    const stripY = -0.088;
+    const stripGeos = [
+      new THREE.BoxGeometry(2 * ow - 0.1, 0.035, 0.05).translate(0, stripY, -(od - 0.045)), // north
+      new THREE.BoxGeometry(2 * ow - 0.1, 0.035, 0.05).translate(0, stripY, od - 0.045),    // south
+      new THREE.BoxGeometry(0.05, 0.035, 2 * od - 0.1).translate(-(ow - 0.045), stripY, 0), // west
+      new THREE.BoxGeometry(0.05, 0.035, 2 * od - 0.1).translate(ow - 0.045, stripY, 0),    // east
+    ];
+    const strip = solidMesh(mergeGeometries(stripGeos), stripMat);
+    strip.name = 'strip';
+    meshes.push(strip);
+
+    // Recessed downlights in the four soffit corners. Aluminum trim ring per
+    // corner + one merged glowing-lens mesh so a single emissive behavior
+    // toggles all four.
+    const cornerX = w / 2 - BAND / 2;
+    const cornerZ = d / 2 - BAND / 2;
+    const lensGeos = [];
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const trim = solidMesh(new THREE.CylinderGeometry(0.055, 0.055, 0.012, 16), getMaterial('aluminum'));
+        trim.position.set(sx * cornerX, -DROP - 0.004, sz * cornerZ);
+        meshes.push(trim);
+        lensGeos.push(
+          new THREE.CylinderGeometry(0.04, 0.04, 0.01, 16)
+            .translate(sx * cornerX, -DROP - 0.009, sz * cornerZ)
+        );
+      }
+    }
+    const downlights = solidMesh(mergeGeometries(lensGeos), downlightMat);
+    downlights.name = 'downlights';
+    meshes.push(downlights);
+
+    indicatorPos = new THREE.Vector3(0.4, -0.21, d / 2 - BAND / 2);
+  }
+
+  return { meshes, meta: { indicatorPos } };
 });
 
 // Ceiling Light — square LED slim panel (kitchen). Origin at ceiling plane,

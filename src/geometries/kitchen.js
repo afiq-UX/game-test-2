@@ -7,6 +7,9 @@ import { getModel } from '../systems/ModelLoader.js';
 // Fridge (Peti Sejuk) — top-freezer, 0.78 × 1.80 × 0.72. Origin at floor.
 // Faces +Z. See design-system/00-art-style.md.
 registerGeometry('fridge', (mats) => {
+  const model = getModel('fridge', mats, new THREE.Vector3(0.24, 1.62, 0.36));
+  if (model) return model;
+
   const bodyMat = getMaterial(mats.body ?? 'offWhite');
   const handleMat = getMaterial(mats.handle ?? 'grayPlastic');
 

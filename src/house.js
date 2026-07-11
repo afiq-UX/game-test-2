@@ -73,8 +73,13 @@ export function buildHouse(scene) {
   // Kitchen (enclosed; open pass-through counter on the north wall facing the
   // dining area — see buildKitchenCounter — instead of a solid wall there)
   buildWallAlongX(scene, walls, wallMeshes, matInner, 5, -15, -7.5, [[-13.125, -9.375]]);
-  buildWallAlongZ(scene, walls, wallMeshes, matInner, -7.5, 5, 12, [[6, 8]]);
-  buildKitchenCounter(scene, furniture);
+  // Door gap shortened from [6,8] to [6,7.5] — the kitchen cabinet model's
+  // east edge sits almost flush with this wall (x≈-7.62) and its footprint
+  // now runs from z≈7.49 to the south wall, overlapping the lower half of
+  // the old gap. Shrinking the gap lengthens the solid wall to back the
+  // cabinet instead of the cabinet overhanging into open doorway space.
+  buildWallAlongZ(scene, walls, wallMeshes, matInner, -7.5, 5, 12, [[6, 7.5]]);
+  const { stoolSpots } = buildKitchenCounter(scene, furniture);
 
   // ---- Per-room floors (non-overlapping rectangles) ----
   const floors = [
@@ -140,7 +145,7 @@ export function buildHouse(scene) {
   const doors = buildDoors(scene);
   const roof = buildRoof(scene);
 
-  return { walls, wallMeshes, furniture, roof, doors, ceiling };
+  return { walls, wallMeshes, furniture, roof, doors, ceiling, stoolSpots };
 }
 
 function buildWallAlongX(scene, walls, wallMeshes, mat, z, xStart, xEnd, gaps, h = WALL_H) {
@@ -225,12 +230,14 @@ function buildBalconyFloor(scene) {
 // [-13.125,-9.375], z=5), where the wall was opened up. Counter-height only
 // (registered as furniture, not a wall), so the camera and sightlines stay
 // open across it while it still blocks foot traffic between the two rooms.
+// Returns the stool anchor points (dining side, z < counter z) so main.js can
+// place the real cafe-stool model there once it's loaded — building the
+// counter itself stays synchronous, but the stool asset loads async.
 function buildKitchenCounter(scene, furniture) {
   const cx = -11.25, z = 5, len = 3.75;
   const baseH = 1.0, topH = 0.05, baseT = 0.6, topT = 0.9;
   const cabinetMat = new THREE.MeshStandardMaterial({ color: 0xd7ccc8, roughness: 0.85 });
   const topMat = new THREE.MeshStandardMaterial({ color: 0xf5f0e6, roughness: 0.35 });
-  const stoolMat = new THREE.MeshStandardMaterial({ color: 0x8d7b68, roughness: 0.8 });
 
   const base = new THREE.Mesh(new THREE.BoxGeometry(len, baseH, baseT), cabinetMat);
   base.position.set(cx, baseH / 2, z);
@@ -238,25 +245,21 @@ function buildKitchenCounter(scene, furniture) {
   base.receiveShadow = true;
   scene.add(base);
 
-  const top = new THREE.Mesh(new THREE.BoxGeometry(len + 0.3, topH, topT + 0.3), topMat);
+  // Top matches the base's width exactly now (no more left/right overhang
+  // past the cabinet ends, per feedback) — keeps only the front/back lip
+  // (topT + 0.3) that the stools tuck under.
+  const top = new THREE.Mesh(new THREE.BoxGeometry(len, topH, topT + 0.3), topMat);
   top.position.set(cx, baseH + topH / 2, z);
   top.castShadow = true;
   top.receiveShadow = true;
   scene.add(top);
 
-  // Barstools on the dining side (z < 5)
-  for (const sx of [cx - 1.0, cx + 1.0]) {
-    const stool = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.7, 0.4), stoolMat);
-    stool.position.set(sx, 0.35, z - 0.7);
-    stool.castShadow = true;
-    stool.receiveShadow = true;
-    scene.add(stool);
-  }
-
   furniture.push({
-    minX: cx - len / 2 - 0.15, maxX: cx + len / 2 + 0.15,
+    minX: cx - len / 2, maxX: cx + len / 2,
     minZ: z - topT / 2 - 0.15, maxZ: z + topT / 2 + 0.15,
   });
+
+  return { stoolSpots: [[cx - 1.0, z - 0.7], [cx, z - 0.7], [cx + 1.0, z - 0.7]] };
 }
 
 function subtractGaps(start, end, gaps) {
