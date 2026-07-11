@@ -32,7 +32,9 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'lampDome' },
       { type: 'light' },
     ],
-    light: { ...L.warmCeiling, offset: [0, -0.44, 0] },
+    // distance capped from the 9-unit default — the BR3 wall is only 4.5
+    // units east of this fixture, so the full reach would bleed through it.
+    light: { ...L.warmCeiling, distance: 4, offset: [0, -0.44, 0] },
     position: [-10.5, 2.90, -6], // hangs from the cove light's central panel
     rotation: 0,
   },
@@ -64,24 +66,32 @@ export const ApplianceConfigs = [
     lights: [
       // Broad warm wash lights spread across the span (one light's 13-unit
       // reach doesn't cover this whole shape) — the light budget system
-      // enables whichever are nearest the player at runtime.
-      { ...L.coveLight, offset: [-10.5, -0.6, -6] },   // over Living
-      { ...L.coveLight, offset: [-10.5, -0.6, 2.5] },  // over Dining
-      { ...L.coveLight, offset: [0, -0.6, 0] },        // over Hall1
-      { ...L.coveLight, offset: [-3.5, -0.6, 8] },     // over Hall3/Hall4, by the kitchen doorway
-      // Corner downlights, one per polygon vertex above.
-      { ...L.downlight, offset: [-14.675, -0.5, -11.675] },
-      { ...L.downlight, offset: [-6.325, -0.5, -11.675] },
-      { ...L.downlight, offset: [-6.325, -0.5, -3.175] },
-      { ...L.downlight, offset: [7.175, -0.5, -3.175] },
-      { ...L.downlight, offset: [7.175, -0.5, 2.175] },
-      { ...L.downlight, offset: [4.175, -0.5, 2.175] },
-      { ...L.downlight, offset: [4.175, -0.5, 5.175] },
-      { ...L.downlight, offset: [-1.825, -0.5, 5.175] },
-      { ...L.downlight, offset: [-1.825, -0.5, 11.675] },
-      { ...L.downlight, offset: [-7.175, -0.5, 11.675] },
-      { ...L.downlight, offset: [-7.175, -0.5, 4.675] },
-      { ...L.downlight, offset: [-14.675, -0.5, 4.675] },
+      // enables whichever are nearest the player at runtime. Each one's
+      // distance is capped to just short of the nearest enclosed room's
+      // wall (BR3/BR2/KIT/MBATH/MBR/BATH2 all border this open shape), so
+      // full reach only happens across the open floor itself.
+      { ...L.coveLight, distance: 4,   offset: [-10.5, -0.6, -6] },  // over Living (BR3 wall 4.5 away)
+      { ...L.coveLight, distance: 5.5, offset: [-10.5, -0.6, 2.5] }, // over Dining (BR2/BR3 south wall 6 away)
+      { ...L.coveLight, distance: 3,   offset: [0, -0.6, 0] },       // over Hall1 (BR2 south wall 3.5 away)
+      { ...L.coveLight, distance: 2,   offset: [-3.5, -0.6, 8] },    // over Hall3/Hall4 (squeezed between KIT and BATH2 walls)
+      // Corner downlights, one per polygon vertex above. Every one of these
+      // sits right at a concave corner of the shape (~0.3 units from an
+      // enclosed room's wall), so their reach is capped tight — this keeps
+      // them a "pool of light" at the corner rather than a room-crossing
+      // wash, though a corner light this close to a wall will still spill a
+      // little past it; a real fix would need shadow-casting per light.
+      { ...L.downlight, distance: 2.5, offset: [-14.675, -0.5, -11.675] },
+      { ...L.downlight, distance: 2.5, offset: [-6.325, -0.5, -11.675] },
+      { ...L.downlight, distance: 2.5, offset: [-6.325, -0.5, -3.175] },
+      { ...L.downlight, distance: 2.5, offset: [7.175, -0.5, -3.175] },
+      { ...L.downlight, distance: 2.5, offset: [7.175, -0.5, 2.175] },
+      { ...L.downlight, distance: 2.5, offset: [4.175, -0.5, 2.175] },
+      { ...L.downlight, distance: 2.5, offset: [4.175, -0.5, 5.175] },
+      { ...L.downlight, distance: 2.5, offset: [-1.825, -0.5, 5.175] },
+      { ...L.downlight, distance: 2.5, offset: [-1.825, -0.5, 11.675] },
+      { ...L.downlight, distance: 2.5, offset: [-7.175, -0.5, 11.675] },
+      { ...L.downlight, distance: 2.5, offset: [-7.175, -0.5, 4.675] },
+      { ...L.downlight, distance: 2.5, offset: [-14.675, -0.5, 4.675] },
     ],
     position: [0, 2.97, 0],
     rotation: 0,
@@ -254,7 +264,10 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'downlights' },
       { type: 'light' },
     ],
-    light: { ...L.coveLight, offset: [0, -0.12, 0] },
+    // distance capped from the 13-unit open-space default so each module
+    // stays within the kitchen instead of bleeding through its walls into
+    // the hall/dining.
+    light: { ...L.coveLight, distance: 4.5, offset: [0, -0.12, 0] },
     position: [-14.25, 2.96, 8.5],
     rotation: 0,
   },
@@ -272,7 +285,10 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'downlights' },
       { type: 'light' },
     ],
-    light: { ...L.coveLight, offset: [0, -0.12, 0] },
+    // distance capped from the 13-unit open-space default so each module
+    // stays within the kitchen instead of bleeding through its walls into
+    // the hall/dining.
+    light: { ...L.coveLight, distance: 4.5, offset: [0, -0.12, 0] },
     position: [-11.25, 2.96, 8.5], // room centre — 3m from each neighbor
     rotation: 0,
   },
@@ -290,7 +306,10 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'downlights' },
       { type: 'light' },
     ],
-    light: { ...L.coveLight, offset: [0, -0.12, 0] },
+    // distance capped from the 13-unit open-space default so each module
+    // stays within the kitchen instead of bleeding through its walls into
+    // the hall/dining.
+    light: { ...L.coveLight, distance: 4.5, offset: [0, -0.12, 0] },
     position: [-8.25, 2.96, 8.5],
     rotation: 0,
   },
@@ -320,17 +339,15 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'lampDome' },
       { type: 'light' },
     ],
-    light: { ...L.warmCeiling, offset: [0, -0.44, 0] },
+    // distance capped from the 9-unit default — the BR2/BR3 south wall is
+    // only ~6 units north of this fixture, so the full reach would bleed
+    // through it.
+    light: { ...L.warmCeiling, distance: 5.5, offset: [0, -0.44, 0] },
     position: [-10.5, 2.96, 2.5], // centered over the dining table zone (old DIN rect, z 0..5)
     rotation: 0,
   },
 
-  // ========== BEDROOM 1 ==========
-  // NOTE: 'BR1' isn't a room in ROOMS (house.js) — it and every position below
-  // in this section are leftovers from the pre-rebuild floor plan, clustered
-  // around x≈-10 (outside every current room). Only the aircond is fixed
-  // here (per this request); bedsideLamp/phoneCharger/standingFan/
-  // ceilingLightBr1 are still stale and need the same treatment.
+  // ========== BEDROOM 3 ==========
   {
     id: 'aircondBr3',
     name: 'Aircond (Bilik 3)',
@@ -346,7 +363,10 @@ export const ApplianceConfigs = [
   {
     id: 'bedsideLamp',
     name: 'Lampu Tepi Katil',
-    room: 'BR1',
+    // Was room 'BR1' (not a real room) at x≈-10 — a leftover from the
+    // pre-rebuild floor plan that actually rendered inside the living room.
+    // Moved into BR3, against the west wall clear of the south door gap.
+    room: 'BR3',
     kind: 'lamp',
     geometry: 'bedsideLamp',
     materials: { base: 'darkCharcoal', pole: 'grayPlastic', shade: 'warmGlowBright' },
@@ -355,25 +375,25 @@ export const ApplianceConfigs = [
       { type: 'light' },
     ],
     light: { ...L.warmLampSmall, offset: [0, 0.37, 0] },
-    position: [-10, 0.80, -9.5],
+    position: [-5.3, 0.80, -9.5],
     rotation: 0,
   },
   {
     id: 'phoneCharger',
     name: 'Charger Telefon',
-    room: 'BR1',
+    room: 'BR3', // was stale room 'BR1'; see bedsideLamp above
     kind: 'small',
     geometry: 'phoneCharger',
     materials: { block: 'whitePlastic', phone: 'blackPlastic' },
     behaviors: [],
     light: null,
-    position: [-10, 0.83, -9.7],
+    position: [-5.3, 0.83, -9.7],
     rotation: 0,
   },
   {
-    id: 'ceilingLightBr1',
-    name: 'Lampu Siling (Bilik 1)',
-    room: 'BR1',
+    id: 'ceilingLightBr3',
+    name: 'Lampu Siling (Bilik Tidur 3)',
+    room: 'BR3', // was stale room 'BR1'; see bedsideLamp above
     kind: 'ceiling-light',
     geometry: 'ceilingLightRound',
     materials: { panel: 'ceilingNeutral' },
@@ -381,8 +401,10 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    light: { ...L.bedroomCeiling, offset: [0, -0.12, 0] },
-    position: [-10, 2.96, -7],
+    // distance capped to BR3's own half-diagonal (~5.06) + a small margin so
+    // it doesn't bleed through the wall into the living room / BR2.
+    light: { ...L.bedroomCeiling, distance: 5.2, offset: [0, -0.12, 0] },
+    position: [-3.25, 2.96, -7.75], // room centre
     rotation: 0,
   },
 
@@ -396,8 +418,6 @@ export const ApplianceConfigs = [
     materials: { body: 'whitePlastic', vent: 'lightGray' },
     behaviors: [],
     light: null,
-    // Old x=10 was outside BR2 entirely (xMin -0.5, xMax 5) — leftover from
-    // the pre-rebuild floor plan, same bug pattern as aircondBr3.
     position: [2.25, 2.4, -11.7],
     rotation: Math.PI, // was facing back into the wall; flipped per feedback
   },
@@ -410,7 +430,11 @@ export const ApplianceConfigs = [
     materials: { stand: 'darkGray', frame: 'blackPlastic', screen: 'screenOnAlt' },
     behaviors: [{ type: 'emissive', target: 'screen' }],
     light: null,
-    position: [8, 1.0, -4],
+    // Old x=8 was outside BR2 entirely (xMax 5) — same stale pre-rebuild-plan
+    // bug as aircondBr2 used to have; this one and deskLamp/ceilingLightBr2
+    // below were rendering inside the balcony. Moved into BR2's NE corner,
+    // clear of the south door gap (x [1,3]).
+    position: [4.3, 1.0, -4.3],
     rotation: 135,
   },
   {
@@ -425,7 +449,7 @@ export const ApplianceConfigs = [
       { type: 'light' },
     ],
     light: { ...L.warmLampDesk, offset: [0.18, 0.33, 0] },
-    position: [7.4, 1.0, -4.2],
+    position: [3.7, 1.0, -4.5],
     rotation: 0,
   },
   {
@@ -439,8 +463,11 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    light: { ...L.bedroomCeiling, offset: [0, -0.12, 0] },
-    position: [10, 2.96, -7],
+    // Old x=10 was outside BR2 (inside the balcony); moved to the room
+    // centre. distance capped to BR2's own half-diagonal (~5.06) + margin,
+    // same reasoning as ceilingLightBr3.
+    light: { ...L.bedroomCeiling, distance: 5.2, offset: [0, -0.12, 0] },
+    position: [2.25, 2.96, -7.75],
     rotation: 0,
   },
 
@@ -462,35 +489,26 @@ export const ApplianceConfigs = [
     rotation: Math.PI, // was facing back into the wall; flipped per feedback
   },
 
-  // ========== BATHROOM ==========
+  // ========== MASTER BATHROOM (ensuite) ==========
   {
     id: 'waterHeater',
     name: 'Pemanas Air',
-    room: 'BATH',
+    // Was room 'BATH' (not a real room since the floor plan rebuild split it
+    // into MBATH/BATH2) at x=-4.5,z=-10 — actually inside BR3. Moved into
+    // MBATH's own footprint (x [7.5,15], z [-3.5,2.5]).
+    room: 'MBATH',
     kind: 'big',
     geometry: 'waterHeater',
     materials: { body: 'whitePlastic', pipe: 'aluminum' },
     behaviors: [],
     light: null,
-    position: [-4.5, 2.4, -10],
+    position: [14.3, 2.4, -3.0],
     rotation: 0,
   },
   {
-    id: 'hairDryer',
-    name: 'Pengering Rambut',
-    room: 'BATH',
-    kind: 'small',
-    geometry: 'hairDryer',
-    materials: { body: 'pinkPlastic' },
-    behaviors: [],
-    light: null,
-    position: [3.5, 1.05, -4],
-    rotation: 0,
-  },
-  {
-    id: 'ceilingLightBath',
-    name: 'Lampu Siling (Bilik Air)',
-    room: 'BATH',
+    id: 'ceilingLightMbath',
+    name: 'Lampu Siling (Bilik Air Utama)',
+    room: 'MBATH', // was stale room 'BATH'; see waterHeater above
     kind: 'ceiling-light',
     geometry: 'ceilingLightRound',
     materials: { panel: 'ceilingCool' },
@@ -498,8 +516,43 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    light: { ...L.bathCeiling, offset: [0, -0.12, 0] },
-    position: [0, 2.96, -7],
+    // distance capped to MBATH's own half-diagonal (~4.8) + margin so it
+    // doesn't bleed through the wall into the hall / master bedroom.
+    light: { ...L.bathCeiling, distance: 5.0, offset: [0, -0.12, 0] },
+    position: [11.25, 2.96, -0.5], // room centre
+    rotation: 0,
+  },
+
+  // ========== BATHROOM 2 ==========
+  {
+    id: 'hairDryer',
+    name: 'Pengering Rambut',
+    room: 'BATH2', // was stale room 'BATH' at x=3.5,z=-4 — actually inside BR2
+    kind: 'small',
+    geometry: 'hairDryer',
+    materials: { body: 'pinkPlastic' },
+    behaviors: [],
+    light: null,
+    position: [3.8, 1.05, 7.0],
+    rotation: 0,
+  },
+  {
+    id: 'ceilingLightBath2',
+    name: 'Lampu Siling (Bilik Air 2)',
+    // BATH2 had no ceiling light at all — the old single 'BATH' fixture
+    // could only cover one of the two post-rebuild bathrooms, so this
+    // mirrors it here rather than leaving the room unlit.
+    room: 'BATH2',
+    kind: 'ceiling-light',
+    geometry: 'ceilingLightRound',
+    materials: { panel: 'ceilingCool' },
+    behaviors: [
+      { type: 'emissive', target: 'panel' },
+      { type: 'light' },
+    ],
+    // distance capped to BATH2's own half-diagonal (~4.4) + margin.
+    light: { ...L.bathCeiling, distance: 4.6, offset: [0, -0.12, 0] },
+    position: [1.5, 2.96, 8.75], // room centre
     rotation: 0,
   },
 ];
