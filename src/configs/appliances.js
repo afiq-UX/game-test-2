@@ -13,7 +13,11 @@ export const ApplianceConfigs = [
     materials: { frame: 'blackPlastic', screen: 'screenOn', stand: 'darkGray' },
     behaviors: [{ type: 'emissive', target: 'screen' }],
     light: null,
-    position: [0, 1.6, -1.75],
+    // Old position was outside LIV entirely (x=0, xMax is -6) — leftover
+    // from the pre-rebuild floor plan. Moved to sit on the new TV wall
+    // cabinet (main.js: centered x=-10.5, back against the north wall at
+    // z=-11.9), just in front of its front face, facing south into the room.
+    position: [-10.5, 1.6, -11.3],
     rotation: 0,
   },
   {
@@ -133,6 +137,28 @@ export const ApplianceConfigs = [
     position: [-0.7, 0.61, -1.5],
     rotation: 0,
   },
+  {
+    id: 'aircondCassetteLiv',
+    name: 'Aircond Siling (Ruang Tamu)',
+    room: 'LIV',
+    kind: 'ceiling-aircond', // ceiling-mounted — excluded from floor collision like fans/ceiling lights, see main.js CEILING_KINDS
+    geometry: 'aircondCassette',
+    materials: { body: 'whitePlastic', vent: 'lightGray' },
+    behaviors: [],
+    light: null,
+    // Offset from the room's centre (-10.5,-6), where the ceiling fan already
+    // hangs, so the two ceiling fixtures don't overlap. y pulled down from
+    // 1. — the living room's cove ceiling drops the visible ceiling plane
+    // down to y=2.77 (see coveLightLiv below), so 2.95 was clipped up inside
+    // the structural ceiling/cove tray instead of hanging free below it.
+    position: [-10.5, 2.8, -7],
+    rotation: 0,
+    scale: 2,
+  },
+  // standingFan removed for now — the skinned 'Electric Fan' GLB was
+  // rendering as a huge distorted mesh (a bind-matrix bug in
+  // ModelLoader.js's stripSkinning(), now fixed). Re-add an entry with
+  // geometry: 'standingFan' once confirmed working; see fans.js.
 
   // ========== KITCHEN ==========
   {
@@ -209,18 +235,63 @@ export const ApplianceConfigs = [
     rotation: 0,
   },
   {
-    id: 'ceilingLightKit',
-    name: 'Lampu Siling (Dapur)',
+    id: 'coveLightKit1',
+    name: 'Lampu Siling Kapur (Dapur) 1',
     room: 'KIT',
-    kind: 'ceiling-light',
-    geometry: 'ceilingLightSquare',
-    materials: { panel: 'ceilingWarm' },
+    kind: 'cove-light',
+    geometry: 'coveLight',
+    // Same fixture as the living/dining cove (coveLightLiv below), but sized
+    // down to a standalone module (size, not shape) since the kitchen is a
+    // single small room — three of them in a row, 3m apart, per feedback
+    // (replaces the old square + 2 round ceiling lights). 1.5x1.5 keeps each
+    // module flush against the west/east walls at this spacing (KIT: x -15..
+    // -7.5, centre -11.25) without poking through them.
+    size: [1.5, 1.5],
+    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip', downlight: 'downlightLens' },
     behaviors: [
+      { type: 'emissive', target: 'strip' },
       { type: 'emissive', target: 'panel' },
+      { type: 'emissive', target: 'downlights' },
       { type: 'light' },
     ],
-    light: { ...L.kitchenCeiling, offset: [0, -0.12, 0] },
-    position: [-10, 2.96, 5],
+    light: { ...L.coveLight, offset: [0, -0.12, 0] },
+    position: [-14.25, 2.96, 8.5],
+    rotation: 0,
+  },
+  {
+    id: 'coveLightKit2',
+    name: 'Lampu Siling Kapur (Dapur) 2',
+    room: 'KIT',
+    kind: 'cove-light',
+    geometry: 'coveLight',
+    size: [1.5, 1.5],
+    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip', downlight: 'downlightLens' },
+    behaviors: [
+      { type: 'emissive', target: 'strip' },
+      { type: 'emissive', target: 'panel' },
+      { type: 'emissive', target: 'downlights' },
+      { type: 'light' },
+    ],
+    light: { ...L.coveLight, offset: [0, -0.12, 0] },
+    position: [-11.25, 2.96, 8.5], // room centre — 3m from each neighbor
+    rotation: 0,
+  },
+  {
+    id: 'coveLightKit3',
+    name: 'Lampu Siling Kapur (Dapur) 3',
+    room: 'KIT',
+    kind: 'cove-light',
+    geometry: 'coveLight',
+    size: [1.5, 1.5],
+    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip', downlight: 'downlightLens' },
+    behaviors: [
+      { type: 'emissive', target: 'strip' },
+      { type: 'emissive', target: 'panel' },
+      { type: 'emissive', target: 'downlights' },
+      { type: 'light' },
+    ],
+    light: { ...L.coveLight, offset: [0, -0.12, 0] },
+    position: [-8.25, 2.96, 8.5],
     rotation: 0,
   },
 
@@ -255,17 +326,22 @@ export const ApplianceConfigs = [
   },
 
   // ========== BEDROOM 1 ==========
+  // NOTE: 'BR1' isn't a room in ROOMS (house.js) — it and every position below
+  // in this section are leftovers from the pre-rebuild floor plan, clustered
+  // around x≈-10 (outside every current room). Only the aircond is fixed
+  // here (per this request); bedsideLamp/phoneCharger/standingFan/
+  // ceilingLightBr1 are still stale and need the same treatment.
   {
-    id: 'aircondBr1',
-    name: 'Aircond (Bilik 1)',
-    room: 'BR1',
+    id: 'aircondBr3',
+    name: 'Aircond (Bilik 3)',
+    room: 'BR3',
     kind: 'big',
     geometry: 'aircond',
     materials: { body: 'whitePlastic', vent: 'lightGray' },
     behaviors: [],
     light: null,
-    position: [-10, 2.4, -11.7],
-    rotation: 0,
+    position: [-3.25, 2.4, -11.7],
+    rotation: Math.PI, // was facing back into the wall; flipped per feedback
   },
   {
     id: 'bedsideLamp',
@@ -295,18 +371,6 @@ export const ApplianceConfigs = [
     rotation: 0,
   },
   {
-    id: 'standingFan',
-    name: 'Kipas Berdiri',
-    room: 'BR1',
-    kind: 'fan',
-    geometry: 'standingFan',
-    materials: { base: 'darkGray', pole: 'medGray', cage: 'grayPlastic', blades: 'lightGray' },
-    behaviors: [{ type: 'spin', target: 'rotor', speed: 10 }],
-    light: null,
-    position: [-7.2, 0.03, -4],
-    rotation: 0,
-  },
-  {
     id: 'ceilingLightBr1',
     name: 'Lampu Siling (Bilik 1)',
     room: 'BR1',
@@ -332,8 +396,10 @@ export const ApplianceConfigs = [
     materials: { body: 'whitePlastic', vent: 'lightGray' },
     behaviors: [],
     light: null,
-    position: [10, 2.4, -11.7],
-    rotation: 0,
+    // Old x=10 was outside BR2 entirely (xMin -0.5, xMax 5) — leftover from
+    // the pre-rebuild floor plan, same bug pattern as aircondBr3.
+    position: [2.25, 2.4, -11.7],
+    rotation: Math.PI, // was facing back into the wall; flipped per feedback
   },
   {
     id: 'computerMonitor',
@@ -376,6 +442,24 @@ export const ApplianceConfigs = [
     light: { ...L.bedroomCeiling, offset: [0, -0.12, 0] },
     position: [10, 2.96, -7],
     rotation: 0,
+  },
+
+  // ========== MASTER BEDROOM ==========
+  // MBR had no appliances at all until now — this is the 3rd of the "3
+  // bedrooms" requested (BR3, BR2, MBR).
+  {
+    id: 'aircondMbr',
+    name: 'Aircond (Bilik Utama)',
+    room: 'MBR',
+    kind: 'big',
+    geometry: 'aircond',
+    materials: { body: 'whitePlastic', vent: 'lightGray' },
+    behaviors: [],
+    light: null,
+    // North wall (z=2.5) solid segment between its two door gaps ([5.2,7.2]
+    // and [10,12] — see house.js), just inside the room.
+    position: [8.5, 2.4, 2.7],
+    rotation: Math.PI, // was facing back into the wall; flipped per feedback
   },
 
   // ========== BATHROOM ==========

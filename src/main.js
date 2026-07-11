@@ -6,7 +6,7 @@ import { ApplianceConfigs } from './configs/appliances.js';
 import { createAllAppliances, tickAppliances, turnOffAppliance } from './factory/ApplianceFactory.js';
 import { detectQuality, getQualityConfig, enforceLightBudget } from './systems/QualitySystem.js';
 import { preloadModels } from './systems/ModelLoader.js';
-import { preloadCafeStool, getCafeStoolTemplate, preloadKitchenCabinets, getKitchenCabinets, getFridgeNookWorldPos, preloadKitchenCounter, getKitchenCounter, preloadDiningTableSet, getDiningTableSet, preloadCupboard, getCupboard } from './systems/PropLoader.js';
+import { preloadCafeStool, getCafeStoolTemplate, preloadKitchenCabinets, getKitchenCabinets, getFridgeNookWorldPos, preloadKitchenCounter, getKitchenCounter, preloadDiningTableSet, getDiningTableSet, preloadCupboard, getCupboard, preloadTvWallCabinet, getTvWallCabinet, preloadRug, getRug, preloadSofa, getSofa } from './systems/PropLoader.js';
 import { createPlayer, PLAYER_RADIUS } from './player.js';
 import { createCameraController } from './cameraController.js';
 import { collide } from './collision.js';
@@ -22,7 +22,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070912);
 scene.fog = new THREE.Fog(0x070912, 22, 55);
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 200); // 60 - 30%, per feedback ("closer" feel)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, quality.maxPixelRatio));
@@ -72,11 +72,12 @@ const loaderBar = document.getElementById('loader-bar');
 const modelNames = [...new Set(ApplianceConfigs.map(c => c.geometry))];
 loaderBar.style.width = '30%';
 
-// Ceiling-mounted fixtures (fans, ceiling lights, cove lighting) sit well
-// above head height — the player walks under them, so they're excluded from
-// floor collision. Everything else (screens, lamps, gadgets, big appliances)
-// sits at a height a walking player would actually bump into.
-const CEILING_KINDS = new Set(['fan-light', 'ceiling-light', 'cove-light']);
+// Ceiling-mounted fixtures (fans, ceiling lights, cove lighting, ceiling
+// aircond units) sit well above head height — the player walks under them,
+// so they're excluded from floor collision. Everything else (screens,
+// lamps, gadgets, big appliances) sits at a height a walking player would
+// actually bump into.
+const CEILING_KINDS = new Set(['fan-light', 'ceiling-light', 'cove-light', 'ceiling-aircond']);
 
 // Add a floor collider spanning an object's actual XZ footprint (computed
 // from its real geometry rather than hand-guessed dimensions).
@@ -86,8 +87,22 @@ function addBoxCollider(object3D) {
   colliders.push({ minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z });
 }
 
+// Add a floor collider for just one local-space region of an object (e.g.
+// one solid segment of a multi-part model), transformed through its current
+// world position/rotation/scale — used so a single L-shaped model doesn't
+// get one giant bounding box covering its empty notches/nooks as solid.
+function addLocalBoxCollider(object3D, localMin, localMax) {
+  const pts = [];
+  for (const x of [localMin[0], localMax[0]])
+    for (const y of [localMin[1], localMax[1]])
+      for (const z of [localMin[2], localMax[2]])
+        pts.push(object3D.localToWorld(new THREE.Vector3(x, y, z)));
+  const box = new THREE.Box3().setFromPoints(pts);
+  colliders.push({ minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z });
+}
+
 (async () => {
-  await Promise.all([preloadModels(modelNames), preloadCafeStool(), preloadKitchenCabinets(), preloadKitchenCounter(), preloadDiningTableSet(), preloadCupboard()]);
+  await Promise.all([preloadModels(modelNames), preloadCafeStool(), preloadKitchenCabinets(), preloadKitchenCounter(), preloadDiningTableSet(), preloadCupboard(), preloadTvWallCabinet(), preloadRug(), preloadSofa()]);
   loaderBar.style.width = '100%';
   loaderEl.classList.add('hidden');
 
@@ -130,7 +145,16 @@ function addBoxCollider(object3D) {
     cabinets.position.z -= 2.5;
     cabinets.updateMatrixWorld(true);
     scene.add(cabinets);
-    addBoxCollider(cabinets);
+    // One box over the whole L-shaped assembly also covered its empty
+    // notches (the appliance nooks) as solid, blocking the player from ever
+    // getting close enough to interact with anything sitting in them — so
+    // this uses one collider per actual solid segment (in the model's own
+    // local space, found the same way as the fridge nook in PropLoader.js)
+    // instead, leaving the nooks themselves open to walk into.
+    addLocalBoxCollider(cabinets, [-77.6, 0, -88.9], [-29.6, 39.1, -64.9]); // main run, before the stove-style gap
+    addLocalBoxCollider(cabinets, [0.4, 0, -88.9], [73.9, 39.1, -64.9]);    // main run, after the gap
+    addLocalBoxCollider(cabinets, [73.9, 0, -88.9], [97.9, 39.1, 8.6]);     // return leg, before the fridge nook
+    addLocalBoxCollider(cabinets, [73.9, 0, 44.6], [97.9, 39.1, 68.6]);     // return leg, after the fridge nook
 
     // Move the fridge into the cabinet's built-in nook (see PropLoader.js —
     // the nook position is a geometric estimate, not a precise measurement).
@@ -173,16 +197,61 @@ function addBoxCollider(object3D) {
     addBoxCollider(diningTableSet);
   }
 
-  // ---------- Cupboard — against the kitchen's north wall (solid segment at
-  // x -15..-13.125, west of the pass-through gap), by the counter's left end
-  // where the overhang used to be. Best-effort spot per feedback — check
-  // once visible. ----------
+  // ---------- Cupboard — same wall plane as the pass-through counter (north
+  // wall, z=5), on the solid segment east of the opening (x -9.375..-7.5),
+  // dining side — moved here per feedback (previously placed on the west
+  // segment instead). ----------
   const cupboard = getCupboard();
   if (cupboard) {
-    cupboard.position.x = -14;
-    cupboard.position.z = 6;
+    cupboard.rotation.y = Math.PI; // turned 180° per feedback
+    cupboard.position.x = -14.4;
+    cupboard.position.z = 4.5;
     scene.add(cupboard);
     addBoxCollider(cupboard);
+  }
+
+  // ---------- TV Wall Cabinet — against the living room's north wall
+  // (LIV: x -15..-6, z -12..0), centered in x, facing south into the room. ----------
+  const tvWallCabinet = getTvWallCabinet();
+  if (tvWallCabinet) {
+    tvWallCabinet.updateMatrixWorld(true);
+    const tvBox = new THREE.Box3().setFromObject(tvWallCabinet);
+    tvWallCabinet.position.x += -10.5 - (tvBox.min.x + tvBox.max.x) / 2;
+    tvWallCabinet.position.z += -11.9 - tvBox.min.z;
+    tvWallCabinet.updateMatrixWorld(true);
+    scene.add(tvWallCabinet);
+    addBoxCollider(tvWallCabinet);
+  }
+
+  // ---------- Rug, in front of the TV wall cabinet, long axis running
+  // toward/away from it ----------
+  const rug = getRug();
+  if (rug) {
+    rug.scale.multiplyScalar(2);
+    rug.position.x += -10.5;
+    rug.position.y += 0.02; // clear of the floor to avoid z-fighting
+    rug.position.z += -7;
+    scene.add(rug);
+  }
+
+  // ---------- Sofa, centered on the rug, facing the TV wall (north) ----------
+  const sofa = getSofa();
+  if (sofa) {
+    sofa.rotation.y = Math.PI / 2;
+    sofa.position.x += -10.5;
+    sofa.position.z += -7;
+    scene.add(sofa);
+    // It's a U-shaped sectional, not a solid block — one box over the whole
+    // footprint also covered its open middle lounge pocket as solid, blocking
+    // the player from ever walking up to the coffee table in the middle. Found
+    // these segments by parsing the raw GLB vertex data (same approach as the
+    // kitchen cabinet nooks) and gridding occupancy across X/Z: one long arm,
+    // its back corner extension, the opposite back block, and the front run —
+    // leaving the central pocket (and the back's small notch) open to walk into.
+    addLocalBoxCollider(sofa, [-2.85, 0, -1.5], [-1.3, 1, 2.65]);  // long arm
+    addLocalBoxCollider(sofa, [-1.3, 0, 1.15], [0.05, 1, 2.65]);   // arm's back corner
+    addLocalBoxCollider(sofa, [1.5, 0, 1.15], [2.65, 1, 2.65]);    // opposite back block
+    addLocalBoxCollider(sofa, [-0.5, 0, -2.95], [2.65, 1, -1.45]); // front run
   }
 
   // Appliance meshes flagged as camera occluders (e.g. the cove-light soffit,

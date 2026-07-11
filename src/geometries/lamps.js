@@ -262,13 +262,17 @@ registerGeometry('coveLight', (mats, config) => {
     meshes.push(strip);
 
     // Recessed downlight at every corner of the perimeter (see reference:
-    // small round spots in the plaster band).
+    // small round spots in the plaster band). Offset well past -DROP: the
+    // soffit's beveled edge (see extrudeFlat) extends its actual bottom face
+    // roughly bevelSize (~0.02) below the nominal -DROP, so the old -0.004/
+    // -0.009 clearance was inside that overhang — buried in the plaster
+    // instead of hanging visibly below it.
     const lensGeos = [];
     for (const [cx, cz] of corners) {
       const trim = solidMesh(new THREE.CylinderGeometry(0.055, 0.055, 0.012, 16), getMaterial('aluminum'));
-      trim.position.set(cx, -DROP - 0.004, cz);
+      trim.position.set(cx, -DROP - 0.03, cz);
       meshes.push(trim);
-      lensGeos.push(new THREE.CylinderGeometry(0.04, 0.04, 0.01, 16).translate(cx, -DROP - 0.009, cz));
+      lensGeos.push(new THREE.CylinderGeometry(0.04, 0.04, 0.01, 16).translate(cx, -DROP - 0.035, cz));
     }
     const downlights = solidMesh(mergeGeometries(lensGeos), downlightMat);
     downlights.name = 'downlights';

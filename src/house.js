@@ -4,6 +4,61 @@ const THICK = 0.2;
 const WALL_H = 3.0;
 const RAIL_H = 1.0; // balcony parapet height
 
+// Shared floor material (one texture set in GPU memory for the whole house,
+// not per room) — each room's plane gets its own UV scale instead of its own
+// material/texture clone, so the plank scale reads consistently regardless
+// of room size without repeating the 2K textures per room.
+const texLoader = new THREE.TextureLoader();
+const floorMap = texLoader.load('/textures/floorWood_baseColor.png');
+const floorNormalMap = texLoader.load('/textures/floorWood_normal.png');
+const floorOrmMap = texLoader.load('/textures/floorWood_orm.png'); // R=AO, G=roughness
+floorMap.colorSpace = THREE.SRGBColorSpace;
+for (const t of [floorMap, floorNormalMap, floorOrmMap]) {
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+}
+const floorMaterial = new THREE.MeshStandardMaterial({
+  map: floorMap,
+  normalMap: floorNormalMap,
+  roughnessMap: floorOrmMap,
+  aoMap: floorOrmMap,
+  roughness: 1,
+  metalness: 0,
+});
+const FLOOR_TILE_METERS = 2; // world metres per texture repeat
+
+// Scale a plane's UVs so its texture tiles at a consistent world-space
+// density regardless of the room's size, and duplicate them into uv2 (which
+// aoMap requires and PlaneGeometry doesn't provide by default).
+function tileFloorUVs(geo, w, d) {
+  const uv = geo.attributes.uv;
+  const sx = w / FLOOR_TILE_METERS, sy = d / FLOOR_TILE_METERS;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
+  uv.needsUpdate = true;
+  geo.setAttribute('uv2', new THREE.BufferAttribute(uv.array, 2));
+}
+
+// Shared wall texture (one texture in GPU memory for every wall, same
+// reasoning as the floor above). Base color only — the source material was
+// flagged KHR_materials_unlit (a flat photo-scan preview), but the walls
+// here use a normal lit MeshStandardMaterial so it still picks up the
+// moonlight/ambient like everything else, with the original tint colors
+// kept as a multiply so outer/inner walls stay visually distinct.
+const wallMap = texLoader.load('/textures/wallConcrete.jpg');
+wallMap.colorSpace = THREE.SRGBColorSpace;
+wallMap.wrapS = wallMap.wrapT = THREE.RepeatWrapping;
+const WALL_TILE_METERS = 3; // world metres per texture repeat
+
+// Scale a BoxGeometry wall segment's UVs by its own real size so the texture
+// reads at a consistent density on the two large faces regardless of wall
+// length — same approach as tileFloorUVs, just applied to all 6 box faces
+// uniformly (the 4 thin edge faces are a minor, rarely-seen approximation).
+function tileWallUVs(geo, w, h) {
+  const uv = geo.attributes.uv;
+  const sx = w / WALL_TILE_METERS, sy = h / WALL_TILE_METERS;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
+  uv.needsUpdate = true;
+}
+
 // Layout (top-down, matches the floor plan; north = -Z):
 //   X: -15 .. +15   Z: -12 .. +12
 //
@@ -39,8 +94,8 @@ export function buildHouse(scene) {
   const wallMeshes = []; // meshes for camera occlusion raycast
   const furniture = [];  // furniture collision AABBs (empty for now — furniture pass comes later)
 
-  const matOuter = new THREE.MeshStandardMaterial({ color: 0xe8d5b7, roughness: 0.92 });
-  const matInner = new THREE.MeshStandardMaterial({ color: 0xc4ad8b, roughness: 0.92 });
+  const matOuter = new THREE.MeshStandardMaterial({ color: 0xe8d5b7, roughness: 0.92, map: wallMap });
+  const matInner = new THREE.MeshStandardMaterial({ color: 0xc4ad8b, roughness: 0.92, map: wallMap });
 
   // ---- Outer walls ----
   // North: full height over the bedrooms/living, parapet across the balcony
@@ -81,27 +136,17 @@ export function buildHouse(scene) {
   buildWallAlongZ(scene, walls, wallMeshes, matInner, -7.5, 5, 12, [[6, 7.5]]);
   const { stoolSpots } = buildKitchenCounter(scene, furniture);
 
-  // ---- Per-room floors (non-overlapping rectangles) ----
+  // ---- Per-room floors (non-overlapping rectangles) — wood tile texture
+  // throughout (including the bathrooms, previously flat-tinted "tile" color) ----
   const floors = [
-    { c: 0xb89978, r: ROOMS.BR3 },
-    { c: 0xb89978, r: ROOMS.BR2 },
-    { c: 0xc8c8d0, r: ROOMS.MBATH }, // tile
-    { c: 0xa98d68, r: ROOMS.MBR },
-    { c: 0xc8c8d0, r: ROOMS.BATH2 }, // tile
-    { c: 0x7d6650, r: ROOMS.KIT },
-    { c: 0xa68b5b, r: ROOMS.LIV },
-    { c: 0x977c52, r: ROOMS.DIN },
-    { c: 0x9c8760, r: ROOMS.HALL1 },
-    { c: 0x9c8760, r: ROOMS.HALL2 },
-    { c: 0x9c8760, r: ROOMS.HALL3 },
-    { c: 0x9c8760, r: ROOMS.HALL4 },
+    ROOMS.BR3, ROOMS.BR2, ROOMS.MBATH, ROOMS.MBR, ROOMS.BATH2, ROOMS.KIT,
+    ROOMS.LIV, ROOMS.DIN, ROOMS.HALL1, ROOMS.HALL2, ROOMS.HALL3, ROOMS.HALL4,
   ];
-  for (const { c, r } of floors) {
+  for (const r of floors) {
     const w = r.xMax - r.xMin, d = r.zMax - r.zMin;
-    const m = new THREE.Mesh(
-      new THREE.PlaneGeometry(w, d),
-      new THREE.MeshStandardMaterial({ color: c, roughness: 0.95 })
-    );
+    const geo = new THREE.PlaneGeometry(w, d);
+    tileFloorUVs(geo, w, d);
+    const m = new THREE.Mesh(geo, floorMaterial);
     m.rotation.x = -Math.PI / 2;
     m.position.set((r.xMin + r.xMax) / 2, 0.01, (r.zMin + r.zMax) / 2);
     m.receiveShadow = true;
@@ -153,6 +198,7 @@ function buildWallAlongX(scene, walls, wallMeshes, mat, z, xStart, xEnd, gaps, h
     const len = e - s;
     if (len <= 0.01) continue;
     const geo = new THREE.BoxGeometry(len, h, THICK);
+    tileWallUVs(geo, len, h);
     const m = new THREE.Mesh(geo, mat);
     m.position.set((s + e) / 2, h / 2, z);
     m.castShadow = true;
@@ -168,6 +214,7 @@ function buildWallAlongZ(scene, walls, wallMeshes, mat, x, zStart, zEnd, gaps, h
     const len = e - s;
     if (len <= 0.01) continue;
     const geo = new THREE.BoxGeometry(THICK, h, len);
+    tileWallUVs(geo, len, h);
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, h / 2, (s + e) / 2);
     m.castShadow = true;
@@ -190,7 +237,9 @@ function buildArcParapet(scene, walls, wallMeshes, mat, h) {
     const x1 = cx + r * Math.sin(t1), z1 = cz - r * Math.cos(t1);
     const dx = x1 - x0, dz = z1 - z0;
     const len = Math.hypot(dx, dz);
-    const m = new THREE.Mesh(new THREE.BoxGeometry(THICK, h, len + 0.06), mat);
+    const parapetGeo = new THREE.BoxGeometry(THICK, h, len + 0.06);
+    tileWallUVs(parapetGeo, len + 0.06, h);
+    const m = new THREE.Mesh(parapetGeo, mat);
     m.position.set((x0 + x1) / 2, h / 2, (z0 + z1) / 2);
     m.rotation.y = Math.atan2(dx, dz);
     m.castShadow = true;
@@ -236,8 +285,10 @@ function buildBalconyFloor(scene) {
 function buildKitchenCounter(scene, furniture) {
   const cx = -11.25, z = 5, len = 3.75;
   const baseH = 1.0, topH = 0.05, baseT = 0.6, topT = 0.9;
-  const cabinetMat = new THREE.MeshStandardMaterial({ color: 0xd7ccc8, roughness: 0.85 });
-  const topMat = new THREE.MeshStandardMaterial({ color: 0xf5f0e6, roughness: 0.35 });
+  // Wood tones matched to the living-room sofa's frame, per feedback (was a
+  // plain white/cream laminate before).
+  const cabinetMat = new THREE.MeshStandardMaterial({ color: 0x8a5a35, roughness: 0.7 });
+  const topMat = new THREE.MeshStandardMaterial({ color: 0xc99e6b, roughness: 0.5 });
 
   const base = new THREE.Mesh(new THREE.BoxGeometry(len, baseH, baseT), cabinetMat);
   base.position.set(cx, baseH / 2, z);

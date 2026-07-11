@@ -210,3 +210,81 @@ export async function preloadCupboard() {
 export function getCupboard() {
   return cupboard;
 }
+
+// ---------------------------------------------------------------------------
+// TV Wall Cabinet — 30 meshes/4 materials, no scale needed (confirmed via the
+// full transform chain: already a sensible ~3.37 x 2.24 x 0.56m footprint).
+let tvWallCabinet = null;
+
+export async function preloadTvWallCabinet() {
+  const gltf = await gltfLoader.loadAsync('/models/tvWallCabinet.glb');
+  const group = gltf.scene;
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(group);
+  const center = box.getCenter(new THREE.Vector3());
+  group.position.x -= center.x;
+  group.position.z -= center.z;
+  group.position.y -= box.min.y;
+  tvWallCabinet = group;
+}
+
+export function getTvWallCabinet() {
+  return tvWallCabinet;
+}
+
+// ---------------------------------------------------------------------------
+// Boho Rug — single flat mesh, no scale needed (already ~1.84 x 3.02m, thin).
+let rug = null;
+
+export async function preloadRug() {
+  const gltf = await gltfLoader.loadAsync('/models/rug.glb');
+  const group = gltf.scene;
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    o.receiveShadow = true;
+  });
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(group);
+  const center = box.getCenter(new THREE.Vector3());
+  group.position.x -= center.x;
+  group.position.z -= center.z;
+  group.position.y -= box.min.y;
+  rug = group;
+}
+
+export function getRug() {
+  return rug;
+}
+
+// ---------------------------------------------------------------------------
+// Outdoors Sofa — 3 meshes (cushions/wood frame/stand), no scale needed. All
+// three parts independently confirm the same large footprint (~5.45 x 5.53m,
+// ~0.87m tall) — a big U/sectional arrangement rather than a single loveseat,
+// not a bounding-box fluke from one stray mesh.
+let sofa = null;
+
+export async function preloadSofa() {
+  const gltf = await gltfLoader.loadAsync('/models/sofa.glb');
+  const group = gltf.scene;
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+  group.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(group);
+  const center = box.getCenter(new THREE.Vector3());
+  group.position.x -= center.x;
+  group.position.z -= center.z;
+  group.position.y -= box.min.y;
+  sofa = group;
+}
+
+export function getSofa() {
+  return sofa;
+}

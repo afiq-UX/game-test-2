@@ -6,7 +6,18 @@ import { getModel } from '../systems/ModelLoader.js';
 // Aircond (wall-mounted)
 registerGeometry('aircond', (mats) => {
   const model = getModel('aircond', mats, new THREE.Vector3(0.8, -0.1, 0.22));
-  if (model) return model;
+  if (model) {
+    // The source model's own origin isn't at its vertical centre (it's
+    // baked at a specific absolute mount height from wherever it was
+    // authored) — re-centre it locally so appliance configs can keep using
+    // the same "position.y = mount height" convention the parametric
+    // fallback below uses (centred on its own origin).
+    const g = model.meshes[0];
+    g.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(g);
+    g.position.y -= (box.min.y + box.max.y) / 2;
+    return model;
+  }
 
   const body = solidMesh(new THREE.BoxGeometry(2.0, 0.5, 0.4), getMaterial(mats.body ?? 'whitePlastic'));
   const vent = solidMesh(new THREE.BoxGeometry(1.8, 0.05, 0.08), getMaterial(mats.vent ?? 'lightGray'));
@@ -14,6 +25,26 @@ registerGeometry('aircond', (mats) => {
   return {
     meshes: [body, vent],
     meta: { indicatorPos: new THREE.Vector3(0.8, -0.1, 0.22) },
+  };
+});
+
+// Aircond Cassette (ceiling-mounted) — square recessed unit, origin at the
+// visible panel roughly ceiling-height, hangs downward.
+registerGeometry('aircondCassette', (mats) => {
+  const model = getModel('aircondCassette', mats, new THREE.Vector3(0.35, -0.05, 0.35));
+  if (model) {
+    // Source model's vent/grille faced up (into the ceiling) by default —
+    // flip it to face down into the room.
+    model.meshes[0].rotation.x = Math.PI;
+    return model;
+  }
+
+  const panel = solidMesh(new THREE.BoxGeometry(0.8, 0.04, 0.8), getMaterial(mats.body ?? 'whitePlastic'));
+  const vent = solidMesh(new THREE.BoxGeometry(0.6, 0.015, 0.6), getMaterial(mats.vent ?? 'lightGray'));
+  vent.position.y = -0.025;
+  return {
+    meshes: [panel, vent],
+    meta: { indicatorPos: new THREE.Vector3(0.35, -0.05, 0.35) },
   };
 });
 

@@ -64,35 +64,10 @@ registerGeometry('ceilingFan', (mats) => {
   };
 });
 
-// Standing Fan
+// Standing Fan — GLB-only, no parametric fallback (removed per request: the
+// real model replaced the old placeholder mesh entirely).
 registerGeometry('standingFan', (mats) => {
   const model = getModel('standingFan', mats, new THREE.Vector3(0.2, 0.6, 0));
-  if (model) return model;
-
-  const base = solidMesh(new THREE.CylinderGeometry(0.25, 0.3, 0.05, 16), getMaterial(mats.base ?? 'darkGray'));
-  const pole = solidMesh(new THREE.CylinderGeometry(0.025, 0.025, 1.0, 8), getMaterial(mats.pole ?? 'medGray'));
-  pole.position.y = 0.5;
-  const cage = solidMesh(new THREE.TorusGeometry(0.3, 0.02, 8, 24), getMaterial(mats.cage ?? 'grayPlastic'));
-  cage.position.y = 1.1;
-  cage.rotation.x = Math.PI / 2;
-
-  const rotor = new THREE.Group();
-  rotor.name = 'rotor';
-  const hub = solidMesh(new THREE.CylinderGeometry(0.16 * 0.32, 0.16 * 0.32, 0.18 * 0.32, 12), getMaterial('darkGray'));
-  rotor.add(hub);
-  for (let i = 0; i < 4; i++) {
-    const b = solidMesh(new THREE.BoxGeometry(1.6 * 0.32, 0.04 * 0.32, 0.22 * 0.32), getMaterial(mats.blades ?? 'lightGray'));
-    b.position.x = 0.8 * 0.32;
-    const a = new THREE.Group();
-    a.add(b);
-    a.rotation.y = (i * Math.PI) / 2;
-    rotor.add(a);
-  }
-  rotor.position.y = 1.1;
-  rotor.rotation.x = Math.PI / 2;
-
-  return {
-    meshes: [base, pole, cage, rotor],
-    meta: { indicatorPos: new THREE.Vector3(0.2, 0.6, 0) },
-  };
+  if (!model) console.warn('standingFan: /models/standingFan.glb missing or failed to load — nothing will render');
+  return model ?? { meshes: [], meta: { indicatorPos: new THREE.Vector3(0.2, 0.6, 0) } };
 });
