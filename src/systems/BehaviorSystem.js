@@ -39,7 +39,9 @@ export const Behaviors = {
     },
   }),
 
-  // Point light visibility (lights are created by factory, behavior just manages them)
+  // Light visibility (point or spot; lights are created by the factory and
+  // their budget/shadow state is managed by QualitySystem — this just kills
+  // them when the appliance is switched off).
   light: () => ({
     setup() {},
     tick() {},

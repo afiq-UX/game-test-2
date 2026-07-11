@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { getMaterial, createToggleMaterial } from './MaterialSystem.js';
+import { getQualityConfig } from './QualitySystem.js';
 import { MaterialTokens } from '../tokens/materials.js';
 
 const loader = new GLTFLoader();
@@ -64,22 +65,47 @@ export async function preloadModels(names) {
   );
 }
 
-// Traverse a cloned scene and replace materials using the config's materials map.
-// Keys are mesh names in the model; values are MaterialToken names.
+// Traverse a cloned scene and resolve each mesh's material.
+//   - materialsMap[child.name] overrides that mesh with a MaterialToken.
+//   - materialsMap._all overrides EVERY mesh with one token (escape hatch for
+//     repainting a whole GLB whose authored mesh names you don't want to chase).
+//   - Otherwise the GLB keeps its authored material, but still gets the same
+//     quality-tier degradation the token pipeline applies (strip metalness /
+//     degrade emissive on weaker tiers) — GLB appliances used to be exempt.
 // Emissive tokens get createToggleMaterial (unique instance) so behaviors can
-// toggle them independently. Everything else gets the shared cached material.
+// toggle them independently; other tokens get the shared cached material.
 function applyMaterials(root, materialsMap) {
+  const qc = getQualityConfig();
+  // Clone + degrade a GLB's own material. MUST clone: the cached original is
+  // shared across every clone of this model, so mutating in place would both
+  // corrupt sibling instances and compound the degrade on each successive one.
+  const degrade = (m) => {
+    if (!m || !m.isMeshStandardMaterial) return m;
+    const c = m.clone();
+    if (qc.materialStripMetalness) c.metalness = 0;
+    c.emissiveIntensity *= qc.materialDegradeEmissive;
+    return c;
+  };
+  const needsDegrade = qc.materialStripMetalness || qc.materialDegradeEmissive < 1;
+
   root.traverse(child => {
     if (!child.isMesh) return;
-    const tokenName = materialsMap[child.name];
-    if (!tokenName) return;
-    const token = MaterialTokens[tokenName];
-    if (!token) return;
-    child.material = token.emissive != null
-      ? createToggleMaterial(tokenName)
-      : getMaterial(tokenName);
     child.castShadow = true;
     child.receiveShadow = true;
+
+    const tokenName = materialsMap[child.name] ?? materialsMap._all;
+    if (tokenName && MaterialTokens[tokenName]) {
+      const token = MaterialTokens[tokenName];
+      child.material = token.emissive != null
+        ? createToggleMaterial(tokenName)
+        : getMaterial(tokenName);
+      return;
+    }
+    if (needsDegrade) {
+      child.material = Array.isArray(child.material)
+        ? child.material.map(degrade)
+        : degrade(child.material);
+    }
   });
 }
 
