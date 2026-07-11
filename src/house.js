@@ -70,9 +70,11 @@ export function buildHouse(scene) {
   // Bath 2
   buildWallAlongX(scene, walls, wallMeshes, matInner, 5.5, -1.5, 4.5, [[0.8, 2.8]]);
   buildWallAlongZ(scene, walls, wallMeshes, matInner, -1.5, 5.5, 12, []);
-  // Kitchen (enclosed; door on the east wall facing the hall)
-  buildWallAlongX(scene, walls, wallMeshes, matInner, 5, -15, -7.5, []);
+  // Kitchen (enclosed; open pass-through counter on the north wall facing the
+  // dining area — see buildKitchenCounter — instead of a solid wall there)
+  buildWallAlongX(scene, walls, wallMeshes, matInner, 5, -15, -7.5, [[-13.125, -9.375]]);
   buildWallAlongZ(scene, walls, wallMeshes, matInner, -7.5, 5, 12, [[6, 8]]);
+  buildKitchenCounter(scene, furniture);
 
   // ---- Per-room floors (non-overlapping rectangles) ----
   const floors = [
@@ -219,6 +221,44 @@ function buildBalconyFloor(scene) {
   scene.add(m);
 }
 
+// Breakfast-bar pass-through counter on the kitchen's north wall (x ∈
+// [-13.125,-9.375], z=5), where the wall was opened up. Counter-height only
+// (registered as furniture, not a wall), so the camera and sightlines stay
+// open across it while it still blocks foot traffic between the two rooms.
+function buildKitchenCounter(scene, furniture) {
+  const cx = -11.25, z = 5, len = 3.75;
+  const baseH = 1.0, topH = 0.05, baseT = 0.6, topT = 0.9;
+  const cabinetMat = new THREE.MeshStandardMaterial({ color: 0xd7ccc8, roughness: 0.85 });
+  const topMat = new THREE.MeshStandardMaterial({ color: 0xf5f0e6, roughness: 0.35 });
+  const stoolMat = new THREE.MeshStandardMaterial({ color: 0x8d7b68, roughness: 0.8 });
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(len, baseH, baseT), cabinetMat);
+  base.position.set(cx, baseH / 2, z);
+  base.castShadow = true;
+  base.receiveShadow = true;
+  scene.add(base);
+
+  const top = new THREE.Mesh(new THREE.BoxGeometry(len + 0.3, topH, topT + 0.3), topMat);
+  top.position.set(cx, baseH + topH / 2, z);
+  top.castShadow = true;
+  top.receiveShadow = true;
+  scene.add(top);
+
+  // Barstools on the dining side (z < 5)
+  for (const sx of [cx - 1.0, cx + 1.0]) {
+    const stool = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.7, 0.4), stoolMat);
+    stool.position.set(sx, 0.35, z - 0.7);
+    stool.castShadow = true;
+    stool.receiveShadow = true;
+    scene.add(stool);
+  }
+
+  furniture.push({
+    minX: cx - len / 2 - 0.15, maxX: cx + len / 2 + 0.15,
+    minZ: z - topT / 2 - 0.15, maxZ: z + topT / 2 + 0.15,
+  });
+}
+
 function subtractGaps(start, end, gaps) {
   if (!gaps.length) return [[start, end]];
   const sorted = [...gaps].sort((a, b) => a[0] - b[0]);
@@ -282,7 +322,7 @@ function buildDoors(scene) {
     makeDoor(scene, 'x',  2.5,  5.2, -Math.PI / 2, 'Pintu Bilik Utama'),     // hall -> master BR (swings south)
     makeDoor(scene, 'x',  2.5,  10,   Math.PI / 2, 'Pintu Bilik Air Utama'), // master BR -> ensuite (swings north)
     makeDoor(scene, 'x',  5.5,  0.8, -Math.PI / 2, 'Pintu Bilik Air 2'),     // hall -> bath 2 (swings south)
-    makeDoor(scene, 'z', -7.5,  6,   -Math.PI / 2, 'Pintu Dapur'),           // hall -> kitchen (swings west)
+    // hall -> kitchen doorway is left open (no door leaf) at x=-7.5, z ∈ [6,8].
     makeDoor(scene, 'x',  12,  -5.5,  Math.PI / 2, 'Pintu Depan'),           // outside -> hall (swings north)
   ];
 }
