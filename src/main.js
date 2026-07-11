@@ -102,7 +102,24 @@ function addLocalBoxCollider(object3D, localMin, localMax) {
 }
 
 (async () => {
-  await Promise.all([preloadModels(modelNames), preloadCafeStool(), preloadKitchenCabinets(), preloadKitchenCounter(), preloadDiningTableSet(), preloadCupboard(), preloadTvWallCabinet(), preloadRug(), preloadSofa()]);
+  // allSettled, not all: one prop asset failing to load (flaky network, a
+  // large GLB timing out, a renamed file) must NOT abort startup — it used to
+  // reject the whole chain and leave the loading bar stuck at 30% forever.
+  // Every prop is optional and its placement below is already null-guarded, so
+  // a failed load just skips that decoration. preloadModels is internally
+  // tolerant too (allSettled), so it never rejects here.
+  const preloads = {
+    models: preloadModels(modelNames), cafeStool: preloadCafeStool(),
+    kitchenCabinets: preloadKitchenCabinets(), kitchenCounter: preloadKitchenCounter(),
+    diningTableSet: preloadDiningTableSet(), cupboard: preloadCupboard(),
+    tvWallCabinet: preloadTvWallCabinet(), rug: preloadRug(), sofa: preloadSofa(),
+  };
+  const results = await Promise.allSettled(Object.values(preloads));
+  Object.keys(preloads).forEach((name, i) => {
+    if (results[i].status === 'rejected') {
+      console.warn(`Prop "${name}" failed to load — skipping it.`, results[i].reason);
+    }
+  });
   loaderBar.style.width = '100%';
   loaderEl.classList.add('hidden');
 
