@@ -37,8 +37,8 @@ const BLEND_RATE = 9;              // idle↔walk weight blend speed (per second
 
 export async function createPlayer() {
   const player = new THREE.Group();
-  player.position.set(0, 0, 4);
-  player.rotation.y = 0;
+  player.position.set(-4.5, 0, 10.5); // just inside the front door
+  player.rotation.y = Math.PI;        // facing into the house
 
   const loader = new FBXLoader();
   const [model, idleFbx, walkFbx, runFbx, reachFbx, victoryFbx] = await Promise.all([
