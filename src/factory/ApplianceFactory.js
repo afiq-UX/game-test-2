@@ -36,21 +36,33 @@ export function createAppliance(config) {
   indicator.position.copy(indPos);
   group.add(indicator);
 
-  // Point lights (optional) — config.light (single) and/or config.lights
-  // (array, e.g. cove corner downlights). Offsets scale with the model.
+  // Lights (optional) — config.light (single) and/or config.lights (array,
+  // e.g. cove corner downlights). Offsets scale with the model. A def with
+  // `type: 'spot'` becomes a downward SpotLight (cone aimed at the floor);
+  // otherwise a PointLight. castShadow starts false and is managed per-frame
+  // by QualitySystem.enforceLightBudget (only the nearest few spots cast).
   const lightDefs = [];
   if (config.light) lightDefs.push(config.light);
   if (config.lights) lightDefs.push(...config.lights);
-  const lights = lightDefs.map(({ color, intensity, distance, decay, offset }) => {
-    const pl = new THREE.PointLight(
-      color ?? 0xffeebb,
-      intensity ?? 1.0,
-      distance ?? 8,
-      decay ?? 1.5
-    );
-    if (offset) pl.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
-    group.add(pl);
-    return pl;
+  const lights = lightDefs.map((def) => {
+    const { color, intensity, distance, decay, offset, type, angle, penumbra } = def;
+    let light;
+    if (type === 'spot') {
+      light = new THREE.SpotLight(
+        color ?? 0xffeebb, intensity ?? 1.0, distance ?? 8,
+        angle ?? Math.PI / 4, penumbra ?? 0.4, decay ?? 1.5
+      );
+      if (offset) light.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
+      // Aim the cone straight down (target sits directly below the light).
+      light.target.position.set(light.position.x, light.position.y - 3, light.position.z);
+      group.add(light.target);
+    } else {
+      light = new THREE.PointLight(color ?? 0xffeebb, intensity ?? 1.0, distance ?? 8, decay ?? 1.5);
+      if (offset) light.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
+    }
+    light.castShadow = false;
+    group.add(light);
+    return light;
   });
 
   // Position and rotation
