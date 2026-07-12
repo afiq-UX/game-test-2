@@ -384,3 +384,23 @@ registerGeometry('ceilingLightRound', (mats) => {
     meta: { indicatorPos: new THREE.Vector3(0.20, -0.035, 0) },
   };
 });
+
+// Recessed Downlight — the small flush spot seen tucked in a cove corner
+// (see coveLight's per-corner trim+lens), but standalone so it can be mounted
+// anywhere on a flat ceiling, not just at a cove's inset corners.
+registerGeometry('downlight', (mats) => {
+  const trim = solidMesh(new THREE.CylinderGeometry(0.055, 0.055, 0.012, 16), getMaterial(mats.trim ?? 'aluminum'));
+  trim.position.y = -0.006;
+
+  const lens = solidMesh(
+    new THREE.CylinderGeometry(0.04, 0.04, 0.01, 16),
+    createToggleMaterial(mats.panel ?? 'downlightLens')
+  );
+  lens.position.y = -0.013;
+  lens.name = 'panel';
+
+  return {
+    meshes: [trim, lens],
+    meta: { indicatorPos: new THREE.Vector3(0.08, -0.02, 0) },
+  };
+});

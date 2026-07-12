@@ -3,6 +3,25 @@ import * as THREE from 'three';
 const THICK = 0.2;
 const WALL_H = 3.0;
 const RAIL_H = 1.0; // balcony parapet height
+// Front entrance doorway gap (x range, south wall) — sized to the real
+// "Modern Wood Door" model's frame width, not a generic guess (see
+// buildFrontDoor() and PropLoader.js's preloadFrontDoor for the
+// measurements). Exported so main.js can position the real door model at
+// these exact same coordinates once it loads, instead of a second
+// hand-copied constant that could drift out of sync with this one.
+export const FRONT_DOOR_GAP = [-5.1, -3.9];
+
+// Doorway gaps (x range) for the 4 doors using the real "clean wooden door"
+// model (BR3, BR2, balcony, master-bedroom entry) — sized to that model's
+// real ~1.52m frame width (see buildRealDoor() and PropLoader.js's
+// preloadInteriorDoor for the measurements), narrower than the 2m gap the
+// remaining procedural doors still use. Exported for the same reason as
+// FRONT_DOOR_GAP — main.js positions the real door clones at these exact
+// coordinates, not a second hand-copied set of numbers.
+export const BR3_DOOR_GAP = [-4.3, -2.7];
+export const BR2_DOOR_GAP = [1.2, 2.8];
+export const BALC_DOOR_GAP = [5.5, 7.1];
+export const MBR_DOOR_GAP = [5.4, 7.0];
 
 // Shared floor material (one texture set in GPU memory for the whole house,
 // not per room) — each room's plane gets its own UV scale instead of its own
@@ -26,12 +45,33 @@ const floorMaterial = new THREE.MeshStandardMaterial({
 });
 const FLOOR_TILE_METERS = 2; // world metres per texture repeat
 
+// Bathroom floor tile — its own material/texture set (the two bathrooms swap
+// the wood floor for this). Same one-texture-set-for-both-rooms, per-mesh UV
+// scaling approach as the wood floor above. Source: "Bathroom Floor Tile
+// Pattern" by valerio.allen24 (CC BY 4.0), extracted from the supplied GLB.
+const bathTileMap = texLoader.load('/textures/bathTile_baseColor.jpg');
+const bathTileNormalMap = texLoader.load('/textures/bathTile_normal.png');
+const bathTileMrMap = texLoader.load('/textures/bathTile_mr.png'); // G=roughness, B=metalness
+bathTileMap.colorSpace = THREE.SRGBColorSpace;
+for (const t of [bathTileMap, bathTileNormalMap, bathTileMrMap]) {
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+}
+const bathFloorMaterial = new THREE.MeshStandardMaterial({
+  map: bathTileMap,
+  normalMap: bathTileNormalMap,
+  roughnessMap: bathTileMrMap,
+  metalnessMap: bathTileMrMap,
+  roughness: 1,
+  metalness: 1, // scaled by the map's B channel
+});
+const BATH_TILE_METERS = 1.5; // one tile-pattern repeat per 1.5m — tweak to taste
+
 // Scale a plane's UVs so its texture tiles at a consistent world-space
 // density regardless of the room's size, and duplicate them into uv2 (which
 // aoMap requires and PlaneGeometry doesn't provide by default).
-function tileFloorUVs(geo, w, d) {
+function tileFloorUVs(geo, w, d, meters = FLOOR_TILE_METERS) {
   const uv = geo.attributes.uv;
-  const sx = w / FLOOR_TILE_METERS, sy = d / FLOOR_TILE_METERS;
+  const sx = w / meters, sy = d / meters;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * sx, uv.getY(i) * sy);
   uv.needsUpdate = true;
   geo.setAttribute('uv2', new THREE.BufferAttribute(uv.array, 2));
@@ -89,6 +129,15 @@ export const ROOMS = {
   HALL4: { name: 'Ruang Legar',      cx: -6.75, cz: 8.5,   xMin: -7.5, xMax: -6,   zMin: 5,    zMax: 12 },
 };
 
+// Which ROOMS key a world position falls in, or null if outside every room
+// (used for light-visibility gating — see QualitySystem.enforceLightBudget).
+export function roomKeyAt(pos) {
+  for (const [key, r] of Object.entries(ROOMS)) {
+    if (pos.x > r.xMin && pos.x < r.xMax && pos.z > r.zMin && pos.z < r.zMax) return key;
+  }
+  return null;
+}
+
 export function buildHouse(scene) {
   const walls = [];      // structural wall collision AABBs (also drawn on the minimap)
   const wallMeshes = []; // meshes for camera occlusion raycast
@@ -105,8 +154,12 @@ export function buildHouse(scene) {
   // East: parapet beside the balcony, full height along master bath/bedroom
   buildWallAlongZ(scene, walls, wallMeshes, matOuter, 15, ARC.cz, -3.5, [], RAIL_H);      // balcony parapet
   buildWallAlongZ(scene, walls, wallMeshes, matOuter, 15, -3.5, 12, []);
-  // South (front door gap) and west
-  buildWallAlongX(scene, walls, wallMeshes, matOuter, 12, -15, 15, [[-5.5, -3.5]]);
+  // South (front door gap) and west. Gap narrowed from 2m to 1.2m (was much
+  // wider than a real door) to fit the "Modern Wood Door" model's actual
+  // ~1.08m frame width, measured from its own bounding box — see
+  // PropLoader.js preloadFrontDoor and buildFrontDoor below.
+  buildWallAlongX(scene, walls, wallMeshes, matOuter, 12, -15, 15, [FRONT_DOOR_GAP]);
+  buildFrontDoorFillers(scene, walls, wallMeshes, matOuter);
   buildWallAlongZ(scene, walls, wallMeshes, matOuter, -15, -12, 12, []);
 
   // ---- Interior walls ----
@@ -115,11 +168,18 @@ export function buildHouse(scene) {
   buildWallAlongZ(scene, walls, wallMeshes, matInner, -0.5, -12, -3.5, []);   // BR3 | BR2
   buildWallAlongZ(scene, walls, wallMeshes, matInner,  5,   -12, -3.5, []);   // BR2 | balcony
   // South wall of the bedroom/balcony row: BR3 door, BR2 door, balcony door
-  buildWallAlongX(scene, walls, wallMeshes, matInner, -3.5, -6, 15, [[-4.5, -2.5], [1, 3], [5.3, 7.3]]);
+  // — all 3 now the real "clean wooden door" model (narrower gaps than the
+  // procedural doors' 2m — see BR3_DOOR_GAP etc. comment).
+  buildWallAlongX(scene, walls, wallMeshes, matInner, -3.5, -6, 15, [BR3_DOOR_GAP, BR2_DOOR_GAP, BALC_DOOR_GAP]);
+  buildRealDoorFillers(scene, walls, wallMeshes, matInner, -3.5, BR3_DOOR_GAP);
+  buildRealDoorFillers(scene, walls, wallMeshes, matInner, -3.5, BR2_DOOR_GAP);
+  buildRealDoorFillers(scene, walls, wallMeshes, matInner, -3.5, BALC_DOOR_GAP);
   // Master bath west wall
   buildWallAlongZ(scene, walls, wallMeshes, matInner, 7.5, -3.5, 2.5, []);
-  // Master row divider: MBR entry (from hall) + ensuite door (from bedroom)
-  buildWallAlongX(scene, walls, wallMeshes, matInner, 2.5, 4.5, 15, [[5.2, 7.2], [10, 12]]);
+  // Master row divider: MBR entry (real door, narrower gap) + ensuite door
+  // (kept procedural — not part of this replacement)
+  buildWallAlongX(scene, walls, wallMeshes, matInner, 2.5, 4.5, 15, [MBR_DOOR_GAP, [10, 12]]);
+  buildRealDoorFillers(scene, walls, wallMeshes, matInner, 2.5, MBR_DOOR_GAP);
   // Master bedroom west wall (also bath 2's east wall)
   buildWallAlongZ(scene, walls, wallMeshes, matInner, 4.5, 2.5, 12, []);
   // Bath 2
@@ -136,22 +196,27 @@ export function buildHouse(scene) {
   buildWallAlongZ(scene, walls, wallMeshes, matInner, -7.5, 5, 12, [[6, 7.5]]);
   const { stoolSpots } = buildKitchenCounter(scene, furniture);
 
-  // ---- Per-room floors (non-overlapping rectangles) — wood tile texture
-  // throughout (including the bathrooms, previously flat-tinted "tile" color) ----
-  const floors = [
-    ROOMS.BR3, ROOMS.BR2, ROOMS.MBATH, ROOMS.MBR, ROOMS.BATH2, ROOMS.KIT,
+  // ---- Per-room floors (non-overlapping rectangles). Living spaces get the
+  // wood tile texture; the two bathrooms (MBATH, BATH2) get the bathroom floor
+  // tile instead — each room's plane is UV-scaled to its own footprint so the
+  // pattern tiles at a consistent real-world density regardless of room size. ----
+  const woodFloors = [
+    ROOMS.BR3, ROOMS.BR2, ROOMS.MBR, ROOMS.KIT,
     ROOMS.LIV, ROOMS.DIN, ROOMS.HALL1, ROOMS.HALL2, ROOMS.HALL3, ROOMS.HALL4,
   ];
-  for (const r of floors) {
+  const tileFloors = [ROOMS.MBATH, ROOMS.BATH2];
+  const buildFloor = (r, material, meters) => {
     const w = r.xMax - r.xMin, d = r.zMax - r.zMin;
     const geo = new THREE.PlaneGeometry(w, d);
-    tileFloorUVs(geo, w, d);
-    const m = new THREE.Mesh(geo, floorMaterial);
+    tileFloorUVs(geo, w, d, meters);
+    const m = new THREE.Mesh(geo, material);
     m.rotation.x = -Math.PI / 2;
     m.position.set((r.xMin + r.xMax) / 2, 0.01, (r.zMin + r.zMax) / 2);
     m.receiveShadow = true;
     scene.add(m);
-  }
+  };
+  for (const r of woodFloors) buildFloor(r, floorMaterial, FLOOR_TILE_METERS);
+  for (const r of tileFloors) buildFloor(r, bathFloorMaterial, BATH_TILE_METERS);
   buildBalconyFloor(scene);
 
   // Outer ground apron (in front of front door)
@@ -370,17 +435,160 @@ function buildRoof(scene) {
 //   axis 'x' -> wall runs along X at z=fixed, gap along X from gapStart..+2
 function buildDoors(scene) {
   return [
-    makeDoor(scene, 'x', -3.5, -4.5,  Math.PI / 2, 'Pintu Bilik Tidur 3'),   // hall -> BR3 (swings north)
-    makeDoor(scene, 'x', -3.5,  1,    Math.PI / 2, 'Pintu Bilik Tidur 2'),   // hall -> BR2 (swings north)
-    makeDoor(scene, 'x', -3.5,  5.3,  Math.PI / 2, 'Pintu Balkoni'),         // hall -> balcony (swings north)
-    makeDoor(scene, 'x',  2.5,  5.2, -Math.PI / 2, 'Pintu Bilik Utama'),     // hall -> master BR (swings south)
-    makeDoor(scene, 'x',  2.5,  10,   Math.PI / 2, 'Pintu Bilik Air Utama'), // master BR -> ensuite (swings north)
-    makeDoor(scene, 'x',  5.5,  0.8, -Math.PI / 2, 'Pintu Bilik Air 2'),     // hall -> bath 2 (swings south)
-    // hall -> kitchen doorway is left open (no door leaf) at x=-7.5, z ∈ [6,8].
-    makeDoor(scene, 'x',  12,  -5.5,  Math.PI / 2, 'Pintu Depan'),           // outside -> hall (swings north)
+    // `rooms` tags which two ROOMS keys each door connects — used by
+    // QualitySystem's light-visibility gating (a light behind a closed door
+    // doesn't count; the moment the door opens, it does).
+    //
+    // BR3/BR2/balcony/MBR-entry use the real "clean wooden door" model
+    // (main.js attaches a clone of it once PropLoader.js's
+    // preloadInteriorDoor resolves — group/leaf start null, same deal as the
+    // front door). Ensuite + bath 2 stay the procedural makeDoor() box —
+    // not part of this replacement.
+    buildRealDoor(-3.5, BR3_DOOR_GAP,  Math.PI / 2, 'Pintu Bilik Tidur 3', ['BR3', 'HALL1']),   // hall -> BR3 (swings north)
+    buildRealDoor(-3.5, BR2_DOOR_GAP,  Math.PI / 2, 'Pintu Bilik Tidur 2', ['BR2', 'HALL1']),   // hall -> BR2 (swings north)
+    buildRealDoor(-3.5, BALC_DOOR_GAP, Math.PI / 2, 'Pintu Balkoni',       ['BALC', 'HALL1']),  // hall -> balcony (swings north)
+    buildRealDoor(2.5,  MBR_DOOR_GAP, -Math.PI / 2, 'Pintu Bilik Utama',   ['HALL1', 'MBR']),   // hall -> master BR (swings south)
+    makeDoor(scene, 'x',  2.5,  10,   Math.PI / 2, 'Pintu Bilik Air Utama', ['MBR', 'MBATH']),   // master BR -> ensuite (swings north)
+    makeDoor(scene, 'x',  5.5,  0.8, -Math.PI / 2, 'Pintu Bilik Air 2',     ['HALL2', 'BATH2']), // hall -> bath 2 (swings south)
+    // hall -> kitchen doorway is left open (no door leaf) at x=-7.5, z ∈ [6,8]
+    // — no door object needed; QualitySystem treats KIT<->HALL4 as always open.
+    buildFrontDoor(), // outside -> hall — real model, not the procedural makeDoor() box
   ];
 }
-function makeDoor(scene, axis, fixed, gapStart, openAngle, name) {
+
+const REAL_DOOR_HEIGHT = 2.3; // matches PropLoader.js's DOOR_OPENING_HEIGHT — shared by the front door and these 4
+const REAL_DOOR_LEAF_WIDTH = 1.28; // real leaf width, measured from the "clean wooden door" source model
+
+// Real-model interior door reuse (BR3/BR2/balcony/MBR-entry — same asset
+// placed 4x, cloned in PropLoader.js's getInteriorDoorInstance). Same
+// collider/pivot math as makeDoor() (pivot at gapStart, same openAngle sign
+// convention — this model's hinge sits on the low-x/gapStart side, same as
+// every procedural door here, unlike the front door's model which hinges
+// the opposite way) — but no procedural visuals; group/leaf stay null until
+// main.js attaches a clone of the loaded model.
+function buildRealDoor(fixed, gap, openAngle, name, rooms) {
+  const [g0, g1] = gap;
+  const gc = (g0 + g1) / 2, halfT = 0.12;
+  const closedBounds = { minX: g0, maxX: g1, minZ: fixed - halfT, maxZ: fixed + halfT };
+  // Same swing-footprint formula makeDoor() uses below, just with this
+  // model's own measured leaf width instead of the procedural LEAF constant.
+  const dir = { x: Math.cos(openAngle), z: -Math.sin(openAngle) };
+  const fx = g0 + dir.x * REAL_DOOR_LEAF_WIDTH, fz = fixed + dir.z * REAL_DOOR_LEAF_WIDTH;
+  const openBounds = {
+    minX: Math.min(g0, fx) - halfT, maxX: Math.max(g0, fx) + halfT,
+    minZ: Math.min(fixed, fz) - halfT, maxZ: Math.max(fixed, fz) + halfT,
+  };
+  return {
+    type: 'door', name, group: null, leaf: null,
+    open: false, openAngle, closedAngle: 0,
+    collider: { active: true, ...closedBounds },
+    closedBounds, openBounds,
+    ix: gc, iz: fixed,
+    rooms,
+  };
+}
+
+// Fills the leftover slivers for a real-model interior door — same reasoning
+// as buildFrontDoorFillers below, generalized for reuse across all 4
+// instances. The frame anchors flush to the hinge/pivot edge (gapStart —
+// see PropLoader.js's preloadInteriorDoor), so slack lands on the FAR (g1)
+// side here — the opposite side from the front door, whose model hinges the
+// other way.
+function buildRealDoorFillers(scene, walls, wallMeshes, mat, fixed, gap) {
+  const [g0, g1] = gap;
+  const headerW = g1 - g0, headerH = WALL_H - REAL_DOOR_HEIGHT;
+  const headerGeo = new THREE.BoxGeometry(headerW, headerH, THICK);
+  tileWallUVs(headerGeo, headerW, headerH);
+  const header = new THREE.Mesh(headerGeo, mat);
+  header.position.set((g0 + g1) / 2, REAL_DOOR_HEIGHT + headerH / 2, fixed);
+  header.castShadow = true; header.receiveShadow = true;
+  scene.add(header);
+
+  // ~0.08m measured slack (1.6m gap - ~1.52m frame); a little generous so no
+  // thin gap survives floating-point/measurement rounding.
+  const sliverW = 0.12;
+  const sliverGeo = new THREE.BoxGeometry(sliverW, WALL_H, THICK);
+  tileWallUVs(sliverGeo, sliverW, WALL_H);
+  const sideFiller = new THREE.Mesh(sliverGeo, mat);
+  sideFiller.position.set(g1 - sliverW / 2, WALL_H / 2, fixed);
+  sideFiller.castShadow = true; sideFiller.receiveShadow = true;
+  scene.add(sideFiller);
+
+  walls.push({ minX: g1 - sliverW, maxX: g1, minZ: fixed - THICK / 2, maxZ: fixed + THICK / 2 });
+  wallMeshes.push(header, sideFiller);
+}
+
+// The real door model (2.3m tall, ~1.08m frame) is shorter than the 3.0m
+// wall opening and narrower than the 1.2m gap cut for it — fill both
+// leftover slivers with plain wall material, same texture/tiling as the
+// wall itself, so they read as "the wall continues" instead of a hole.
+// Registered as real colliders/occluders (unlike the door's own header/jambs
+// in makeDoor(), which don't need that: the doorway's `collider` already
+// blocks that whole span while closed) — because these fillers are true
+// static wall, not part of the door, they must still block the player and
+// occlude the camera even while the door is OPEN, when the door's own
+// collider shrinks down to just the swung-open leaf's footprint.
+function buildFrontDoorFillers(scene, walls, wallMeshes, mat) {
+  const [gx0, gx1] = FRONT_DOOR_GAP;
+  const z = 12;
+
+  // Header: fills the wall's full 3.0m height down to the door's 2.3m top,
+  // spanning the whole gap width.
+  const headerW = gx1 - gx0, headerH = WALL_H - REAL_DOOR_HEIGHT;
+  const headerGeo = new THREE.BoxGeometry(headerW, headerH, THICK);
+  tileWallUVs(headerGeo, headerW, headerH);
+  const header = new THREE.Mesh(headerGeo, mat);
+  header.position.set((gx0 + gx1) / 2, REAL_DOOR_HEIGHT + headerH / 2, z);
+  header.castShadow = true; header.receiveShadow = true;
+  scene.add(header);
+
+  // Side sliver: the frame anchors flush to the hinge edge (gx1 — see
+  // buildFrontDoor below), so all ~0.12m of slack between the frame's own
+  // ~1.08m width and the 1.2m gap ends up on the gx0 side. Sized a little
+  // generous so no thin gap survives floating-point/measurement rounding.
+  const sliverW = 0.15;
+  const sliverGeo = new THREE.BoxGeometry(sliverW, WALL_H, THICK);
+  tileWallUVs(sliverGeo, sliverW, WALL_H);
+  const sideFiller = new THREE.Mesh(sliverGeo, mat);
+  sideFiller.position.set(gx0 + sliverW / 2, WALL_H / 2, z);
+  sideFiller.castShadow = true; sideFiller.receiveShadow = true;
+  scene.add(sideFiller);
+
+  walls.push({ minX: gx0, maxX: gx0 + sliverW, minZ: z - THICK / 2, maxZ: z + THICK / 2 });
+  wallMeshes.push(header, sideFiller);
+}
+
+// Front entrance — uses the real "Modern Wood Door" model instead of
+// makeDoor()'s procedural frame+box, so its visual meshes (.group/.leaf)
+// aren't built here; main.js attaches them once the async GLB load resolves
+// (see PropLoader.js preloadFrontDoor/getFrontDoor). This just sets up the
+// same collider/pivot/interaction shape every other door object has.
+//
+// Pivot sits at the gap's HIGH-x edge (FRONT_DOOR_GAP[1]) because that's
+// where THIS model's hinge hardware actually is (measured from its own
+// bounding box — see PropLoader.js) — unlike every procedural door, which
+// hinges at gapStart (the low-x edge). openAngle is negative so the leaf
+// still swings north/inward, the same visual result as every other door.
+function buildFrontDoor() {
+  const [gx0, gx1] = FRONT_DOOR_GAP;
+  const fixed = 12, halfT = 0.12;
+  const LEAF = 0.87; // real leaf width, measured from the source model (~0.865m)
+  const openAngle = -Math.PI / 2;
+  const closedBounds = { minX: gx0, maxX: gx1, minZ: fixed - halfT, maxZ: fixed + halfT };
+  // Fully open: leaf sweeps from the pivot (gx1, fixed) purely toward -Z
+  // (north/inward) by LEAF — no X component, since the pivot IS the gap's
+  // x edge (see openAngle comment above for why this direction, not +Z).
+  const openBounds = { minX: gx1 - halfT, maxX: gx1 + halfT, minZ: fixed - LEAF - halfT, maxZ: fixed + halfT };
+  return {
+    type: 'door', name: 'Pintu Depan', group: null, leaf: null,
+    open: false, openAngle, closedAngle: 0,
+    collider: { active: true, ...closedBounds },
+    closedBounds, openBounds,
+    ix: (gx0 + gx1) / 2, iz: fixed, // interaction anchor — doorway centre, same convention as every other door
+    rooms: ['HALL3', null], // outside isn't a lit room
+  };
+}
+function makeDoor(scene, axis, fixed, gapStart, openAngle, name, rooms) {
   const DOOR_H = 2.3, LEAF = 1.86, halfT = 0.12;
   const g0 = gapStart, g1 = gapStart + 2, gc = gapStart + 1;
   const along = axis === 'z'; // leaf/gap run along Z (else along X)
@@ -444,5 +652,6 @@ function makeDoor(scene, axis, fixed, gapStart, openAngle, name) {
     collider: { active: true, ...closedBounds },
     closedBounds, openBounds,
     ix: along ? fixed : gc, iz: along ? gc : fixed, // interaction anchor
+    rooms, // [roomKeyA, roomKeyB] this door connects — see QualitySystem light gating
   };
 }

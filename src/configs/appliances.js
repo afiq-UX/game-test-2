@@ -13,11 +13,13 @@ export const ApplianceConfigs = [
     materials: { frame: 'blackPlastic', screen: 'screenOn', stand: 'darkGray' },
     behaviors: [{ type: 'emissive', target: 'screen' }],
     light: null,
-    // Old position was outside LIV entirely (x=0, xMax is -6) — leftover
-    // from the pre-rebuild floor plan. Moved to sit on the new TV wall
-    // cabinet (main.js: centered x=-10.5, back against the north wall at
-    // z=-11.9), just in front of its front face, facing south into the room.
-    position: [-10.5, 1.6, -11.3],
+    // Centered on the new TV wall shelf (main.js: centered x=-10.5, back
+    // against the north wall at z=-11.9). Pulled in much closer to the wall
+    // than the old cabinet's front face (-11.3) — the new shelf's middle
+    // compartment is open (no door), so the TV's own back/wall-mount bracket
+    // needs to sit near the wall itself, not floating out at a solid
+    // cabinet's front face, or the open gap behind it would be visible.
+    position: [-10.5, 1.12, -11.7],
     rotation: 0,
   },
   {
@@ -32,10 +34,7 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'lampDome' },
       { type: 'light' },
     ],
-    // Downward spotlight (warmCeiling) — the fan lamp lights the floor below in
-    // a cone and casts real shadows (incl. the spinning blades) when it's one of
-    // the nearest fixtures. distance is the cone length.
-    light: { ...L.warmCeiling, distance: 4, offset: [0, -0.44, 0] },
+    light: { ...L.warmCeiling, offset: [0, -0.44, 0] },
     position: [-10.5, 2.90, -6], // hangs from the cove light's central panel
     rotation: 0,
   },
@@ -67,31 +66,24 @@ export const ApplianceConfigs = [
     lights: [
       // Broad warm wash lights spread across the span (one light's 13-unit
       // reach doesn't cover this whole shape) — the light budget system
-      // enables whichever are nearest the player at runtime. Each one's
-      // distance is capped to just short of the nearest enclosed room's
-      // wall (BR3/BR2/KIT/MBATH/MBR/BATH2 all border this open shape), so
-      // full reach only happens across the open floor itself.
-      { ...L.coveLight, distance: 4,   offset: [-10.5, -0.6, -6] },  // over Living (BR3 wall 4.5 away)
-      { ...L.coveLight, distance: 5.5, offset: [-10.5, -0.6, 2.5] }, // over Dining (BR2/BR3 south wall 6 away)
-      { ...L.coveLight, distance: 3,   offset: [0, -0.6, 0] },       // over Hall1 (BR2 south wall 3.5 away)
-      { ...L.coveLight, distance: 2,   offset: [-3.5, -0.6, 8] },    // over Hall3/Hall4 (squeezed between KIT and BATH2 walls)
-      // Corner downlights, one per polygon vertex above. These are now
-      // downward spotlight cones (the `downlight` token is `type: 'spot'`), so
-      // even sitting ~0.3 units from an enclosed room's wall they light the
-      // floor pool at the corner without spraying sideways through the wall —
-      // and the nearest few cast real shadows. distance is the cone length.
-      { ...L.downlight, distance: 2.5, offset: [-14.675, -0.5, -11.675] },
-      { ...L.downlight, distance: 2.5, offset: [-6.325, -0.5, -11.675] },
-      { ...L.downlight, distance: 2.5, offset: [-6.325, -0.5, -3.175] },
-      { ...L.downlight, distance: 2.5, offset: [7.175, -0.5, -3.175] },
-      { ...L.downlight, distance: 2.5, offset: [7.175, -0.5, 2.175] },
-      { ...L.downlight, distance: 2.5, offset: [4.175, -0.5, 2.175] },
-      { ...L.downlight, distance: 2.5, offset: [4.175, -0.5, 5.175] },
-      { ...L.downlight, distance: 2.5, offset: [-1.825, -0.5, 5.175] },
-      { ...L.downlight, distance: 2.5, offset: [-1.825, -0.5, 11.675] },
-      { ...L.downlight, distance: 2.5, offset: [-7.175, -0.5, 11.675] },
-      { ...L.downlight, distance: 2.5, offset: [-7.175, -0.5, 4.675] },
-      { ...L.downlight, distance: 2.5, offset: [-14.675, -0.5, 4.675] },
+      // enables whichever are nearest the player at runtime.
+      { ...L.coveLight, offset: [-10.5, -0.6, -6] },   // over Living
+      { ...L.coveLight, offset: [-10.5, -0.6, 2.5] },  // over Dining
+      { ...L.coveLight, offset: [0, -0.6, 0] },        // over Hall1
+      { ...L.coveLight, offset: [-3.5, -0.6, 8] },     // over Hall3/Hall4, by the kitchen doorway
+      // Corner downlights, one per polygon vertex above.
+      { ...L.downlight, offset: [-14.675, -0.5, -11.675] },
+      { ...L.downlight, offset: [-6.325, -0.5, -11.675] },
+      { ...L.downlight, offset: [-6.325, -0.5, -3.175] },
+      { ...L.downlight, offset: [7.175, -0.5, -3.175] },
+      { ...L.downlight, offset: [7.175, -0.5, 2.175] },
+      { ...L.downlight, offset: [4.175, -0.5, 2.175] },
+      { ...L.downlight, offset: [4.175, -0.5, 5.175] },
+      { ...L.downlight, offset: [-1.825, -0.5, 5.175] },
+      { ...L.downlight, offset: [-1.825, -0.5, 11.675] },
+      { ...L.downlight, offset: [-7.175, -0.5, 11.675] },
+      { ...L.downlight, offset: [-7.175, -0.5, 4.675] },
+      { ...L.downlight, offset: [-14.675, -0.5, 4.675] },
     ],
     position: [0, 2.97, 0],
     rotation: 0,
@@ -245,75 +237,37 @@ export const ApplianceConfigs = [
     rotation: 0,
   },
   {
-    id: 'coveLightKit1',
-    name: 'Lampu Siling Kapur (Dapur) 1',
+    id: 'downlightKit1',
+    name: 'Lampu Kelibat Siling (Dapur) 1',
     room: 'KIT',
-    kind: 'cove-light',
-    geometry: 'coveLight',
-    // Same fixture as the living/dining cove (coveLightLiv below), but sized
-    // down to a standalone module (size, not shape) since the kitchen is a
-    // single small room — three of them in a row, 3m apart, per feedback
-    // (replaces the old square + 2 round ceiling lights). 1.5x1.5 keeps each
-    // module flush against the west/east walls at this spacing (KIT: x -15..
-    // -7.5, centre -11.25) without poking through them.
-    size: [1.5, 1.5],
-    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip', downlight: 'downlightLens' },
+    kind: 'ceiling-light',
+    geometry: 'downlight',
+    // The small recessed spot from the cove corner (see coveLight's per-corner
+    // trim+lens), standalone this time — per feedback, not the full cove
+    // soffit module. Two of them, 3m apart, centered in the kitchen (KIT:
+    // x -15..-7.5, centre -11.25).
+    materials: { panel: 'downlightLens' },
     behaviors: [
-      { type: 'emissive', target: 'strip' },
       { type: 'emissive', target: 'panel' },
-      { type: 'emissive', target: 'downlights' },
       { type: 'light' },
     ],
-    // Downward spotlight cone (coveSpot) — aims at the kitchen floor, so it
-    // lights this room without spraying sideways through the walls into the
-    // hall/dining the way the old omnidirectional point light did. distance is
-    // the cone length (clears the ceiling-to-floor drop).
-    light: { ...L.coveSpot, distance: 4.5, offset: [0, -0.12, 0] },
-    position: [-14.25, 2.96, 8.5],
+    light: { ...L.downlight, offset: [0, -0.02, 0] },
+    position: [-12.75, 2.96, 8.5],
     rotation: 0,
   },
   {
-    id: 'coveLightKit2',
-    name: 'Lampu Siling Kapur (Dapur) 2',
+    id: 'downlightKit2',
+    name: 'Lampu Kelibat Siling (Dapur) 2',
     room: 'KIT',
-    kind: 'cove-light',
-    geometry: 'coveLight',
-    size: [1.5, 1.5],
-    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip', downlight: 'downlightLens' },
+    kind: 'ceiling-light',
+    geometry: 'downlight',
+    materials: { panel: 'downlightLens' },
     behaviors: [
-      { type: 'emissive', target: 'strip' },
       { type: 'emissive', target: 'panel' },
-      { type: 'emissive', target: 'downlights' },
       { type: 'light' },
     ],
-    // Downward spotlight cone (coveSpot) — aims at the kitchen floor, so it
-    // lights this room without spraying sideways through the walls into the
-    // hall/dining the way the old omnidirectional point light did. distance is
-    // the cone length (clears the ceiling-to-floor drop).
-    light: { ...L.coveSpot, distance: 4.5, offset: [0, -0.12, 0] },
-    position: [-11.25, 2.96, 8.5], // room centre — 3m from each neighbor
-    rotation: 0,
-  },
-  {
-    id: 'coveLightKit3',
-    name: 'Lampu Siling Kapur (Dapur) 3',
-    room: 'KIT',
-    kind: 'cove-light',
-    geometry: 'coveLight',
-    size: [1.5, 1.5],
-    materials: { tray: 'whitePlastic', panel: 'plasterGlow', strip: 'ledStrip', downlight: 'downlightLens' },
-    behaviors: [
-      { type: 'emissive', target: 'strip' },
-      { type: 'emissive', target: 'panel' },
-      { type: 'emissive', target: 'downlights' },
-      { type: 'light' },
-    ],
-    // Downward spotlight cone (coveSpot) — aims at the kitchen floor, so it
-    // lights this room without spraying sideways through the walls into the
-    // hall/dining the way the old omnidirectional point light did. distance is
-    // the cone length (clears the ceiling-to-floor drop).
-    light: { ...L.coveSpot, distance: 4.5, offset: [0, -0.12, 0] },
-    position: [-8.25, 2.96, 8.5],
+    light: { ...L.downlight, offset: [0, -0.02, 0] },
+    position: [-9.75, 2.96, 8.5], // 3m from downlightKit1, straddling room centre
     rotation: 0,
   },
 
@@ -342,9 +296,7 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'lampDome' },
       { type: 'light' },
     ],
-    // Downward spotlight (warmCeiling) over the dining zone; cone lights the
-    // floor and casts shadows when nearest. distance is the cone length.
-    light: { ...L.warmCeiling, distance: 5.5, offset: [0, -0.44, 0] },
+    light: { ...L.warmCeiling, offset: [0, -0.44, 0] },
     position: [-10.5, 2.96, 2.5], // centered over the dining table zone (old DIN rect, z 0..5)
     rotation: 0,
   },
@@ -403,10 +355,7 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    // Downward spotlight (bedroomCeiling): cone lights the BR3 floor and casts
-    // shadows when nearest. Points down, so it no longer sprays through the
-    // walls into the living room / BR2. distance = cone length.
-    light: { ...L.bedroomCeiling, distance: 5.2, offset: [0, -0.12, 0] },
+    light: { ...L.bedroomCeiling, offset: [0, -0.12, 0] },
     position: [-3.25, 2.96, -7.75], // room centre
     rotation: 0,
   },
@@ -467,9 +416,7 @@ export const ApplianceConfigs = [
       { type: 'light' },
     ],
     // Old x=10 was outside BR2 (inside the balcony); moved to the room centre.
-    // Downward spotlight, same as ceilingLightBr3 — cone lights BR2's floor,
-    // casts shadows when nearest, doesn't spill through the walls.
-    light: { ...L.bedroomCeiling, distance: 5.2, offset: [0, -0.12, 0] },
+    light: { ...L.bedroomCeiling, offset: [0, -0.12, 0] },
     position: [2.25, 2.96, -7.75],
     rotation: 0,
   },
@@ -519,9 +466,7 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    // Downward spotlight (bathCeiling) — cone lights the MBATH floor, casts
-    // shadows when nearest, doesn't spill into the hall / master bedroom.
-    light: { ...L.bathCeiling, distance: 5.0, offset: [0, -0.12, 0] },
+    light: { ...L.bathCeiling, offset: [0, -0.12, 0] },
     position: [11.25, 2.96, -0.5], // room centre
     rotation: 0,
   },
@@ -553,9 +498,7 @@ export const ApplianceConfigs = [
       { type: 'emissive', target: 'panel' },
       { type: 'light' },
     ],
-    // Downward spotlight (bathCeiling) — cone lights the BATH2 floor, casts
-    // shadows when nearest, doesn't spill into MBR / the hall.
-    light: { ...L.bathCeiling, distance: 4.6, offset: [0, -0.12, 0] },
+    light: { ...L.bathCeiling, offset: [0, -0.12, 0] },
     position: [1.5, 2.96, 8.75], // room centre
     rotation: 0,
   },

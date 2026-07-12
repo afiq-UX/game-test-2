@@ -2,11 +2,19 @@
 // Preloads GLB files and provides GLTF-first geometry with parametric fallback.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { getMaterial, createToggleMaterial } from './MaterialSystem.js';
 import { getQualityConfig } from './QualitySystem.js';
 import { MaterialTokens } from '../tokens/materials.js';
 
+// Some GLBs use Draco geometry compression (smaller downloads) — this decoder
+// is required to load them regardless of whether a given file actually uses
+// it (GLTFLoader only invokes it when a KHR_draco_mesh_compression extension
+// is present, so plain GLBs are unaffected).
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('/draco/');
 const loader = new GLTFLoader();
+loader.setDRACOLoader(dracoLoader);
 const cache = new Map(); // geometryType → THREE.Group
 
 // Rigged/skinned models (e.g. a fan with an animatable blade bone): nothing

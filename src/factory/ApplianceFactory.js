@@ -37,30 +37,15 @@ export function createAppliance(config) {
   group.add(indicator);
 
   // Lights (optional) — config.light (single) and/or config.lights (array,
-  // e.g. cove corner downlights). Offsets scale with the model. A def with
-  // `type: 'spot'` becomes a downward SpotLight (cone aimed at the floor);
-  // otherwise a PointLight. castShadow starts false and is managed per-frame
-  // by QualitySystem.enforceLightBudget (only the nearest few spots cast).
+  // e.g. cove corner downlights). Offsets scale with the model. Plain
+  // omnidirectional PointLights only — no spotlight cones, no realtime shadow
+  // casting (reverted per feedback: too heavy for what it added).
   const lightDefs = [];
   if (config.light) lightDefs.push(config.light);
   if (config.lights) lightDefs.push(...config.lights);
-  const lights = lightDefs.map((def) => {
-    const { color, intensity, distance, decay, offset, type, angle, penumbra } = def;
-    let light;
-    if (type === 'spot') {
-      light = new THREE.SpotLight(
-        color ?? 0xffeebb, intensity ?? 1.0, distance ?? 8,
-        angle ?? Math.PI / 4, penumbra ?? 0.4, decay ?? 1.5
-      );
-      if (offset) light.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
-      // Aim the cone straight down (target sits directly below the light).
-      light.target.position.set(light.position.x, light.position.y - 3, light.position.z);
-      group.add(light.target);
-    } else {
-      light = new THREE.PointLight(color ?? 0xffeebb, intensity ?? 1.0, distance ?? 8, decay ?? 1.5);
-      if (offset) light.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
-    }
-    light.castShadow = false;
+  const lights = lightDefs.map(({ color, intensity, distance, decay, offset }) => {
+    const light = new THREE.PointLight(color ?? 0xffeebb, intensity ?? 1.0, distance ?? 8, decay ?? 1.5);
+    if (offset) light.position.set(offset[0] * scale, offset[1] * scale, offset[2] * scale);
     group.add(light);
     return light;
   });
@@ -122,10 +107,18 @@ export function tickAppliances(appliances, dt) {
 
 /**
  * Turn off an appliance — hides indicator, kills lights, runs behavior turnOff.
+ *
+ * Lights are killed by zeroing intensity, NOT by setting `visible = false`:
+ * an invisible light changes three.js's per-type light COUNT, which is a
+ * shader compile-time define, so hiding a light forces every material in the
+ * scene to recompile — a multi-hundred-ms freeze on every appliance toggle
+ * (the core game loop). Zero intensity is a uniform change, so the count
+ * stays constant and nothing recompiles. enforceLightBudget keeps it dimmed
+ * while `a.on` is false.
  */
 export function turnOffAppliance(a) {
   a.on = false;
   a.indicator.visible = false;
-  for (const l of a.lights) l.visible = false;
+  for (const l of a.lights) l.intensity = 0;
   for (const b of a._behaviors) b.turnOff(a);
 }

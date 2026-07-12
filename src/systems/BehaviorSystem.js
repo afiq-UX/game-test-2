@@ -39,14 +39,16 @@ export const Behaviors = {
     },
   }),
 
-  // Light visibility (point or spot; lights are created by the factory and
-  // their budget/shadow state is managed by QualitySystem — this just kills
-  // them when the appliance is switched off).
+  // Light kill on switch-off (lights are created by the factory and their
+  // budget is managed by QualitySystem). Kills by zeroing intensity, never
+  // `visible` — an invisible light changes three.js's per-type light count (a
+  // shader compile-time define), which recompiles every material in the
+  // scene. Intensity is a uniform, so the count stays constant.
   light: () => ({
     setup() {},
     tick() {},
     turnOff(state) {
-      for (const l of state.lights) l.visible = false;
+      for (const l of state.lights) l.intensity = 0;
     },
   }),
 };
