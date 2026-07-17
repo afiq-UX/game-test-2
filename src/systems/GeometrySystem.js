@@ -17,10 +17,6 @@ export function createGeometry(type, materials, config) {
   return builder(materials, config);
 }
 
-export function hasGeometry(type) {
-  return registry.has(type);
-}
-
 // Helper: create a mesh with shadows enabled
 export function solidMesh(geo, mat) {
   const m = new THREE.Mesh(geo, mat);

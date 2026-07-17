@@ -48,8 +48,3 @@ export function createToggleMaterial(tokenName, overrides) {
   if (!base) throw new Error(`Unknown material token: "${tokenName}"`);
   return new THREE.MeshStandardMaterial(resolveProps(base, overrides));
 }
-
-export function disposeMaterials() {
-  for (const mat of cache.values()) mat.dispose();
-  cache.clear();
-}

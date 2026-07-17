@@ -11,10 +11,11 @@ import { createPlayer, PLAYER_RADIUS } from './player.js';
 import { createCameraController } from './cameraController.js';
 import { collide } from './collision.js';
 import { createHud, formatTime, currentRoomName } from './hud.js';
+import { createNerdStats } from './nerdStats.js';
 import { clickSound } from './audio.js';
 import { setupDesktopControls, setupTouchControls } from './controls.js';
 
-detectQuality();
+const qualityTier = detectQuality();
 const quality = getQualityConfig();
 
 // ---------- Scene ----------
@@ -32,6 +33,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = quality.toneMappingExposure;
 document.body.appendChild(renderer.domElement);
+
+// F3 / ?stats debug overlay — frame() is called right after each render below.
+const nerdStats = createNerdStats(renderer, scene, { tier: qualityTier });
 
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -566,6 +570,7 @@ function addLocalBoxCollider(object3D, localMin, localMax) {
     cam.update(dt, player.position);
 
     renderer.render(scene, camera);
+    nerdStats.frame();
     requestAnimationFrame(step);
   }
   step();

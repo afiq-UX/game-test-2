@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { registerGeometry, solidMesh } from '../systems/GeometrySystem.js';
 import { getMaterial, createToggleMaterial } from '../systems/MaterialSystem.js';
-import { getModel } from '../systems/ModelLoader.js';
 
 // Ceiling Fan with Light — 1.30 m blade span, 5 blades, built at real size
 // (no config scale needed). Origin at the ceiling attach point, hangs down.
@@ -62,12 +61,4 @@ registerGeometry('ceilingFan', (mats) => {
     meshes,
     meta: { indicatorPos: new THREE.Vector3(0.13, -0.335, 0) },
   };
-});
-
-// Standing Fan — GLB-only, no parametric fallback (removed per request: the
-// real model replaced the old placeholder mesh entirely).
-registerGeometry('standingFan', (mats) => {
-  const model = getModel('standingFan', mats, new THREE.Vector3(0.2, 0.6, 0));
-  if (!model) console.warn('standingFan: /models/standingFan.glb missing or failed to load — nothing will render');
-  return model ?? { meshes: [], meta: { indicatorPos: new THREE.Vector3(0.2, 0.6, 0) } };
 });

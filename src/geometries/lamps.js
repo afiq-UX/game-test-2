@@ -347,23 +347,6 @@ registerGeometry('coveLight', (mats, config) => {
   return { meshes, meta: { indicatorPos } };
 });
 
-// Ceiling Light — square LED slim panel (kitchen). Origin at ceiling plane,
-// hangs downward.
-registerGeometry('ceilingLightSquare', (mats) => {
-  const frame = solidMesh(new RoundedBoxGeometry(0.48, 0.045, 0.48, 2, 0.012), getMaterial('aluminum'));
-  frame.position.y = -0.0225;
-
-  // Glowing diffuser panel — single named mesh for the emissive toggle
-  const panel = solidMesh(new RoundedBoxGeometry(0.42, 0.02, 0.42, 2, 0.006), createToggleMaterial(mats.panel ?? 'ceilingWarm'));
-  panel.position.y = -0.048;
-  panel.name = 'panel';
-
-  return {
-    meshes: [frame, panel],
-    meta: { indicatorPos: new THREE.Vector3(0.22, -0.03, 0.22) },
-  };
-});
-
 // Ceiling Light — round flush-mount dome (bedrooms, bath). Origin at ceiling
 // plane, hangs downward.
 registerGeometry('ceilingLightRound', (mats) => {

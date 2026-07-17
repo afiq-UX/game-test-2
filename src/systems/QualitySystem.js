@@ -18,16 +18,8 @@ export function detectQuality() {
   return currentTier;
 }
 
-export function getQualityTier() {
-  return currentTier;
-}
-
 export function getQualityConfig() {
   return QualityTiers[currentTier];
-}
-
-export function setQualityTier(tier) {
-  if (QualityTiers[tier]) currentTier = tier;
 }
 
 // Rooms with no walls between them at all (one continuous open floor) — a

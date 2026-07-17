@@ -157,11 +157,6 @@ export const ApplianceConfigs = [
     rotation: 0,
     scale: 2,
   },
-  // standingFan removed for now — the skinned 'Electric Fan' GLB was
-  // rendering as a huge distorted mesh (a bind-matrix bug in
-  // ModelLoader.js's stripSkinning(), now fixed). Re-add an entry with
-  // geometry: 'standingFan' once confirmed working; see fans.js.
-
   // ========== KITCHEN ==========
   {
     id: 'fridge',

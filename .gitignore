@@ -1,3 +1,9 @@
 node_modules
 dist
 .vite
+.DS_Store
+
+# raw asset staging areas — processed copies live in public/
+/*.glb
+/textures/
+/source/
